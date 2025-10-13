@@ -91,9 +91,6 @@ public class NullnessNoInitAnnotatedTypeFactory
     protected final AnnotationMirror POLYNULL =
             AnnotationBuilder.fromClass(elements, PolyNull.class);
 
-    protected final AnnotationMirror RWNULL =
-            AnnotationBuilder.fromClass(elements, ReadWriteDynamicNull.class);
-
     /** The @{@link MonotonicNonNull} annotation. */
     protected final AnnotationMirror MONOTONIC_NONNULL =
             AnnotationBuilder.fromClass(elements, MonotonicNonNull.class);
@@ -492,9 +489,15 @@ public class NullnessNoInitAnnotatedTypeFactory
         }
     }
 
-    protected void replaceRWNull(
-            AnnotatedTypeMirror lhsType, AnnotatedTypeMirror rhsType, boolean isConservative) {
-        if (isConservative) {
+    /**
+     * Replace ReadWriteDynamicNull with NonNull or Nullable based on (1) whether use conservative
+     * default or optimistic default and (2) which side of the assignment has ReadWriteDynamicNull.
+     *
+     * @param lhsType the left-hand side type
+     * @param rhsType the right-hand side type
+     */
+    protected void replaceRWNull(AnnotatedTypeMirror lhsType, AnnotatedTypeMirror rhsType) {
+        if (checker.useConservativeDefaultsSource) {
             if (lhsType.hasAnnotation(ReadWriteDynamicNull.class)) {
                 lhsType.replaceAnnotation(NONNULL);
             } else if (rhsType.hasAnnotation(ReadWriteDynamicNull.class)) {

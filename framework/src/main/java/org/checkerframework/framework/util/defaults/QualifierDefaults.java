@@ -151,13 +151,11 @@ public class QualifierDefaults {
                             TypeUseLocation.ALL));
 
     /** Standard unchecked default locations that should be top. */
-    // Fields are defaulted to top so that warnings are issued at field reads, which we believe are
-    // more common than field writes. Future work is to specify different defaults for field reads
-    // and field writes.  (When a field is written to, its type should be bottom.)
     public static final List<TypeUseLocation> STANDARD_UNCHECKED_DEFAULTS_TOP =
             Collections.unmodifiableList(
                     Arrays.asList(TypeUseLocation.RETURN, TypeUseLocation.UPPER_BOUND));
 
+    /** Standard unchecked default locations that should be dynamic. */
     public static final List<TypeUseLocation> STANDARD_UNCHECKED_DYNAMIC_DEFAULT =
             Collections.unmodifiableList(Arrays.asList(TypeUseLocation.FIELD));
 

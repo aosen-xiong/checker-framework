@@ -145,7 +145,11 @@ public class NoElementQualifierHierarchy extends QualifierHierarchy {
         AnnotationMirrorSet dynamic = new AnnotationMirrorSet();
         for (QualifierKind kind : qualifierKindHierarchy.allQualifierKinds()) {
             if (kind.isDynamicAnnotation()) {
-                AnnotationMirror dynamicAnno = kindToAnnotationMirror.get(kind);
+                @SuppressWarnings(
+                        "nullness:assignment.type.incompatible" // All QualifierKinds are keys in
+                // kindToAnnotationMirror
+                )
+                @NonNull AnnotationMirror dynamicAnno = kindToAnnotationMirror.get(kind);
                 dynamic.add(dynamicAnno);
             }
         }

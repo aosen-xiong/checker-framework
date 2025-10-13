@@ -25,5 +25,10 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.ANNOTATION_TYPE})
 public @interface ReadWriteDynamicQualifier {
+    /**
+     * The qualifier that is the target of this read-write sensitive qualifier.
+     *
+     * @return the target qualifier
+     */
     Class<? extends Annotation> value();
 }

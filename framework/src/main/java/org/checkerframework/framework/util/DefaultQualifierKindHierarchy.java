@@ -767,6 +767,7 @@ public class DefaultQualifierKindHierarchy implements QualifierKindHierarchy {
         // Set while creating the QualifierKindHierarchy.
         protected @Nullable DefaultQualifierKind poly;
 
+        /** The dynamic read-write qualifier of the hierarchy to which this belongs. */
         protected @Nullable DefaultQualifierKind dynamic;
 
         /**
