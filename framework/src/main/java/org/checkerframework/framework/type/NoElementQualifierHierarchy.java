@@ -144,7 +144,7 @@ public class NoElementQualifierHierarchy extends QualifierHierarchy {
             @UnderInitialization NoElementQualifierHierarchy this) {
         AnnotationMirrorSet dynamic = new AnnotationMirrorSet();
         for (QualifierKind kind : qualifierKindHierarchy.allQualifierKinds()) {
-            if (kind.isDynamicQualifier()) {
+            if (kind.isDynamicAnnotation()) {
                 AnnotationMirror dynamicAnno = kindToAnnotationMirror.get(kind);
                 dynamic.add(dynamicAnno);
             }
@@ -216,7 +216,7 @@ public class NoElementQualifierHierarchy extends QualifierHierarchy {
 
     @Override
     public AnnotationMirrorSet getDynamicAnnotations() {
-        return dynamicAnnos;
+        return dynamicAnnotations;
     }
 
     @Override

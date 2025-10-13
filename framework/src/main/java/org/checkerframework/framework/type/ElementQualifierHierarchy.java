@@ -171,7 +171,7 @@ public abstract class ElementQualifierHierarchy extends QualifierHierarchy {
             @UnderInitialization ElementQualifierHierarchy this) {
         Map<QualifierKind, AnnotationMirror> dynamicMap = new TreeMap<>();
         for (QualifierKind kind : qualifierKindHierarchy.allQualifierKinds()) {
-            if (kind.isDynamicQualifier()) {
+            if (kind.isDynamicAnnotation()) {
                 dynamicMap.put(
                         kind, AnnotationBuilder.fromClass(elements, kind.getAnnotationClass()));
             }
