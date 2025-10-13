@@ -23,7 +23,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.checker.nullness.qual.PolyNull;
-import org.checkerframework.checker.nullness.qual.RWNull;
+import org.checkerframework.checker.nullness.qual.ReadWriteDynamicNull;
 import org.checkerframework.checker.signature.qual.FullyQualifiedName;
 import org.checkerframework.common.basetype.BaseTypeChecker;
 import org.checkerframework.dataflow.cfg.node.Node;
@@ -91,7 +91,8 @@ public class NullnessNoInitAnnotatedTypeFactory
     protected final AnnotationMirror POLYNULL =
             AnnotationBuilder.fromClass(elements, PolyNull.class);
 
-    protected final AnnotationMirror RWNULL = AnnotationBuilder.fromClass(elements, RWNull.class);
+    protected final AnnotationMirror RWNULL =
+            AnnotationBuilder.fromClass(elements, ReadWriteDynamicNull.class);
 
     /** The @{@link MonotonicNonNull} annotation. */
     protected final AnnotationMirror MONOTONIC_NONNULL =
@@ -383,7 +384,7 @@ public class NullnessNoInitAnnotatedTypeFactory
         tempNullnessAnnos.add(MonotonicNonNull.class);
         tempNullnessAnnos.add(Nullable.class);
         tempNullnessAnnos.add(PolyNull.class);
-        tempNullnessAnnos.add(RWNull.class);
+        tempNullnessAnnos.add(ReadWriteDynamicNull.class);
         nullnessAnnos = Collections.unmodifiableSet(tempNullnessAnnos);
 
         NONNULL_ALIASES.forEach(annotation -> addAliasedTypeAnnotation(annotation, NONNULL));
@@ -457,7 +458,7 @@ public class NullnessNoInitAnnotatedTypeFactory
                         MonotonicNonNull.class,
                         NonNull.class,
                         PolyNull.class,
-                        RWNull.class));
+                        ReadWriteDynamicNull.class));
     }
 
     /**
@@ -494,15 +495,15 @@ public class NullnessNoInitAnnotatedTypeFactory
     protected void replaceRWNull(
             AnnotatedTypeMirror lhsType, AnnotatedTypeMirror rhsType, boolean isConservative) {
         if (isConservative) {
-            if (lhsType.hasAnnotation(RWNull.class)) {
+            if (lhsType.hasAnnotation(ReadWriteDynamicNull.class)) {
                 lhsType.replaceAnnotation(NONNULL);
-            } else if (rhsType.hasAnnotation(RWNull.class)) {
+            } else if (rhsType.hasAnnotation(ReadWriteDynamicNull.class)) {
                 rhsType.replaceAnnotation(NULLABLE);
             }
         } else {
-            if (lhsType.hasAnnotation(RWNull.class)) {
+            if (lhsType.hasAnnotation(ReadWriteDynamicNull.class)) {
                 lhsType.replaceAnnotation(NULLABLE);
-            } else if (lhsType.hasAnnotation(RWNull.class)) {
+            } else if (lhsType.hasAnnotation(ReadWriteDynamicNull.class)) {
                 rhsType.replaceAnnotation(NONNULL);
             }
         }

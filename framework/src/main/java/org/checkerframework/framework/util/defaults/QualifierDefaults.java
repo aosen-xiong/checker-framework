@@ -233,7 +233,7 @@ public class QualifierDefaults {
     public void addUncheckedStandardDefaults() {
         QualifierHierarchy qualHierarchy = this.atypeFactory.getQualifierHierarchy();
         AnnotationMirrorSet tops = qualHierarchy.getTopAnnotations();
-        AnnotationMirrorSet dynamicAnno = qualHierarchy.getDynamicAnnotation();
+        AnnotationMirrorSet dynamicAnno = qualHierarchy.getDynamicAnnotations();
         AnnotationMirrorSet bottoms = qualHierarchy.getBottomAnnotations();
 
         for (TypeUseLocation loc : STANDARD_UNCHECKED_DEFAULTS_TOP) {

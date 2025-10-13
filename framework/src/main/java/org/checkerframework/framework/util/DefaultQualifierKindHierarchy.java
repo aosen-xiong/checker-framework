@@ -203,7 +203,7 @@ public class DefaultQualifierKindHierarchy implements QualifierKindHierarchy {
             Map<DefaultQualifierKind, Set<DefaultQualifierKind>> directSuperMap) {
         for (DefaultQualifierKind qualifierKind : qualifierKinds) {
             boolean isPoly = qualifierKind.isPoly();
-            boolean isDynamic = qualifierKind.isDynamicQualifier();
+            boolean isDynamic = qualifierKind.isDynamicAnnotation();
             boolean hasSubtypeOfAnno = directSuperMap.containsKey(qualifierKind);
             if (isPoly && hasSubtypeOfAnno) {
                 // Polymorphic qualifiers with upper and lower bounds are currently not supported.
@@ -428,6 +428,16 @@ public class DefaultQualifierKindHierarchy implements QualifierKindHierarchy {
         }
     }
 
+    /**
+     * Iterates over all the qualifier kinds and adds all read-write dynamic qualifier kinds to
+     * dynamicQualifiers. Also sets {@link DefaultQualifierKind#dynamic}, {@link
+     * DefaultQualifierKind#top}, and {@link DefaultQualifierKind#strictSuperTypes} for the
+     * read-write dynamic qualifiers, and sets {@link DefaultQualifierKind#dynamic} for the top
+     * qualifiers.
+     *
+     * <p>Requires that tops has been initialized.
+     */
+    @RequiresNonNull({"this.nameToQualifierKind", "this.qualifierKinds", "this.tops"})
     protected void initializeDynamicReadWriteQualifiers(
             @UnderInitialization DefaultQualifierKindHierarchy this) {
         for (DefaultQualifierKind qualifierKind : qualifierKinds) {
@@ -460,7 +470,7 @@ public class DefaultQualifierKindHierarchy implements QualifierKindHierarchy {
             @UnderInitialization DefaultQualifierKindHierarchy this,
             Map<DefaultQualifierKind, Set<DefaultQualifierKind>> directSuperMap) {
         for (DefaultQualifierKind qualifierKind : directSuperMap.keySet()) {
-            if (!(qualifierKind.isPoly() || qualifierKind.isDynamicQualifier())) {
+            if (!(qualifierKind.isPoly() || qualifierKind.isDynamicAnnotation())) {
                 qualifierKind.strictSuperTypes = findAllTheSupers(qualifierKind, directSuperMap);
             }
         }
@@ -495,7 +505,7 @@ public class DefaultQualifierKindHierarchy implements QualifierKindHierarchy {
                             "Multiple bottoms found for qualifier %s. Bottoms: %s and %s.",
                             qualifierKind, bot, qualifierKind.bottom);
                 }
-                if (qualifierKind.isPoly() || qualifierKind.isDynamicQualifier()) {
+                if (qualifierKind.isPoly() || qualifierKind.isDynamicAnnotation()) {
                     assert bot.strictSuperTypes != null
                             : "@AssumeAssertion(nullness): strictSuperTypes should be nonnull.";
                     bot.strictSuperTypes.add(qualifierKind);
@@ -836,7 +846,7 @@ public class DefaultQualifierKindHierarchy implements QualifierKindHierarchy {
 
         @Pure
         @Override
-        public boolean isDynamicQualifier() {
+        public boolean isDynamicAnnotation() {
             return this.dynamic == this;
         }
 

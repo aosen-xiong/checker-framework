@@ -42,7 +42,8 @@ public class NoElementQualifierHierarchy extends QualifierHierarchy {
     /** Set of top annotation mirrors. */
     protected final AnnotationMirrorSet tops;
 
-    protected final AnnotationMirrorSet dynamicAnno;
+    /** The set of dynamic annotation mirrors. */
+    protected final AnnotationMirrorSet dynamicAnnotations;
 
     /** Set of bottom annotation mirrors. */
     protected final AnnotationMirrorSet bottoms;
@@ -73,7 +74,7 @@ public class NoElementQualifierHierarchy extends QualifierHierarchy {
         this.qualifiers = AnnotationMirrorSet.unmodifiableSet(kindToAnnotationMirror.values());
 
         this.tops = createTops();
-        this.dynamicAnno = createDynamic();
+        this.dynamicAnnotations = createDynamicAnnotations();
         this.bottoms = createBottoms();
     }
 
@@ -133,7 +134,13 @@ public class NoElementQualifierHierarchy extends QualifierHierarchy {
         return AnnotationMirrorSet.unmodifiableSet(tops);
     }
 
-    protected AnnotationMirrorSet createDynamic(
+    /**
+     * Creates and returns the unmodifiable set of dynamic {@link AnnotationMirror}s.
+     *
+     * @return the unmodifiable set of dynamic {@link AnnotationMirror}s
+     */
+    @RequiresNonNull({"this.kindToAnnotationMirror", "this.qualifierKindHierarchy"})
+    protected AnnotationMirrorSet createDynamicAnnotations(
             @UnderInitialization NoElementQualifierHierarchy this) {
         AnnotationMirrorSet dynamic = new AnnotationMirrorSet();
         for (QualifierKind kind : qualifierKindHierarchy.allQualifierKinds()) {
@@ -208,8 +215,8 @@ public class NoElementQualifierHierarchy extends QualifierHierarchy {
     }
 
     @Override
-    public AnnotationMirrorSet getDynamicAnnotation() {
-        return dynamicAnno;
+    public AnnotationMirrorSet getDynamicAnnotations() {
+        return dynamicAnnos;
     }
 
     @Override
