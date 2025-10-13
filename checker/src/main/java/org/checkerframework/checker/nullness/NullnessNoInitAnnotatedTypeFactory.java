@@ -23,6 +23,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.checker.nullness.qual.PolyNull;
+import org.checkerframework.checker.nullness.qual.RWNull;
 import org.checkerframework.checker.signature.qual.FullyQualifiedName;
 import org.checkerframework.common.basetype.BaseTypeChecker;
 import org.checkerframework.dataflow.cfg.node.Node;
@@ -89,6 +90,8 @@ public class NullnessNoInitAnnotatedTypeFactory
     /** The @{@link PolyNull} annotation. */
     protected final AnnotationMirror POLYNULL =
             AnnotationBuilder.fromClass(elements, PolyNull.class);
+
+    protected final AnnotationMirror RWNULL = AnnotationBuilder.fromClass(elements, RWNull.class);
 
     /** The @{@link MonotonicNonNull} annotation. */
     protected final AnnotationMirror MONOTONIC_NONNULL =
@@ -375,11 +378,12 @@ public class NullnessNoInitAnnotatedTypeFactory
     public NullnessNoInitAnnotatedTypeFactory(BaseTypeChecker checker) {
         super(checker);
 
-        Set<Class<? extends Annotation>> tempNullnessAnnos = new LinkedHashSet<>(4);
+        Set<Class<? extends Annotation>> tempNullnessAnnos = new LinkedHashSet<>(5);
         tempNullnessAnnos.add(NonNull.class);
         tempNullnessAnnos.add(MonotonicNonNull.class);
         tempNullnessAnnos.add(Nullable.class);
         tempNullnessAnnos.add(PolyNull.class);
+        tempNullnessAnnos.add(RWNull.class);
         nullnessAnnos = Collections.unmodifiableSet(tempNullnessAnnos);
 
         NONNULL_ALIASES.forEach(annotation -> addAliasedTypeAnnotation(annotation, NONNULL));
@@ -449,7 +453,11 @@ public class NullnessNoInitAnnotatedTypeFactory
     protected Set<Class<? extends Annotation>> createSupportedTypeQualifiers() {
         return new LinkedHashSet<>(
                 Arrays.asList(
-                        Nullable.class, MonotonicNonNull.class, NonNull.class, PolyNull.class));
+                        Nullable.class,
+                        MonotonicNonNull.class,
+                        NonNull.class,
+                        PolyNull.class,
+                        RWNull.class));
     }
 
     /**
@@ -479,6 +487,23 @@ public class NullnessNoInitAnnotatedTypeFactory
                 } else if (inferred.isPolyNullNull) {
                     lhsType.replaceAnnotation(NULLABLE);
                 }
+            }
+        }
+    }
+
+    protected void replaceRWNull(
+            AnnotatedTypeMirror lhsType, AnnotatedTypeMirror rhsType, boolean isConservative) {
+        if (isConservative) {
+            if (lhsType.hasAnnotation(RWNull.class)) {
+                lhsType.replaceAnnotation(NONNULL);
+            } else if (rhsType.hasAnnotation(RWNull.class)) {
+                rhsType.replaceAnnotation(NULLABLE);
+            }
+        } else {
+            if (lhsType.hasAnnotation(RWNull.class)) {
+                lhsType.replaceAnnotation(NULLABLE);
+            } else if (lhsType.hasAnnotation(RWNull.class)) {
+                rhsType.replaceAnnotation(NONNULL);
             }
         }
     }

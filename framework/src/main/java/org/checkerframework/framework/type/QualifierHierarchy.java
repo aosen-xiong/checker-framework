@@ -77,6 +77,8 @@ public abstract class QualifierHierarchy {
      */
     public abstract AnnotationMirrorSet getTopAnnotations();
 
+    public abstract AnnotationMirrorSet getDynamicAnnotation();
+
     /**
      * Returns true if the given qualifer is one of the top annotations for this qualifer hierarchy.
      *

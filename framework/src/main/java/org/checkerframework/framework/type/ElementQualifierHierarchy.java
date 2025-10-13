@@ -53,6 +53,10 @@ public abstract class ElementQualifierHierarchy extends QualifierHierarchy {
     /** The set of top annotation mirrors. */
     protected final AnnotationMirrorSet tops;
 
+    protected final Map<QualifierKind, AnnotationMirror> dynamicMap;
+
+    protected final AnnotationMirrorSet dynamicAnnotation;
+
     /** A mapping from bottom QualifierKinds to their corresponding AnnotationMirror. */
     protected final Map<QualifierKind, AnnotationMirror> bottomsMap;
 
@@ -84,6 +88,10 @@ public abstract class ElementQualifierHierarchy extends QualifierHierarchy {
 
         this.topsMap = Collections.unmodifiableMap(createTopsMap());
         this.tops = AnnotationMirrorSet.unmodifiableSet(topsMap.values());
+
+        this.dynamicMap = Collections.unmodifiableMap(createDynamicMap());
+
+        this.dynamicAnnotation = AnnotationMirrorSet.unmodifiableSet(dynamicMap.values());
 
         this.bottomsMap = Collections.unmodifiableMap(createBottomsMap());
         this.bottoms = AnnotationMirrorSet.unmodifiableSet(bottomsMap.values());
@@ -150,6 +158,18 @@ public abstract class ElementQualifierHierarchy extends QualifierHierarchy {
         return topsMap;
     }
 
+    protected Map<QualifierKind, AnnotationMirror> createDynamicMap(
+            @UnderInitialization ElementQualifierHierarchy this) {
+        Map<QualifierKind, AnnotationMirror> dynamicMap = new TreeMap<>();
+        for (QualifierKind kind : qualifierKindHierarchy.allQualifierKinds()) {
+            if (kind.isDynamicQualifier()) {
+                dynamicMap.put(
+                        kind, AnnotationBuilder.fromClass(elements, kind.getAnnotationClass()));
+            }
+        }
+        return dynamicMap;
+    }
+
     /**
      * Creates a mapping from QualifierKind to AnnotationMirror, where the QualifierKind is bottom
      * and the AnnotationMirror is bottom in their respective hierarchies.
@@ -200,6 +220,11 @@ public abstract class ElementQualifierHierarchy extends QualifierHierarchy {
 
     @Override
     public AnnotationMirrorSet getTopAnnotations() {
+        return tops;
+    }
+
+    @Override
+    public AnnotationMirrorSet getDynamicAnnotation() {
         return tops;
     }
 

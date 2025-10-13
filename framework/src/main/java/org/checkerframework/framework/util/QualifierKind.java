@@ -86,6 +86,9 @@ public @Interned interface QualifierKind extends Comparable<QualifierKind> {
     @Pure
     boolean isPoly();
 
+    @Pure
+    boolean isDynamicQualifier();
+
     /**
      * Returns true if the annotation class this qualifier kind represents has annotation
      * elements/arguments.
