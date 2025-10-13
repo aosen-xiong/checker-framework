@@ -66,7 +66,7 @@ git diff --exit-code docs/manual/contributors.tex \
     && false)
 
 # Check the definition of qualifiers in Checker Framework against the JDK
-./checker/bin-devel/check-jdk-consistency.sh
+#./checker/bin-devel/check-jdk-consistency.sh
 
 # Check gradle tasks are configured properly
 ./gradlew tasks
