@@ -466,6 +466,7 @@ public class DefaultQualifierKindHierarchy implements QualifierKindHierarchy {
      *     qualifier kinds; created by {@link #createDirectSuperMap()}
      */
     @RequiresNonNull({"this.qualifierKinds", "this.tops", "this.bottoms"})
+    @SuppressWarnings("nullness:dereference.of.nullable")
     protected void initializeQualifierKindFields(
             @UnderInitialization DefaultQualifierKindHierarchy this,
             Map<DefaultQualifierKind, Set<DefaultQualifierKind>> directSuperMap) {
