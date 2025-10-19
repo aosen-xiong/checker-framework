@@ -157,7 +157,7 @@ public class QualifierDefaults {
 
     /** Standard unchecked default locations that should be dynamic. */
     public static final List<TypeUseLocation> STANDARD_UNCHECKED_DYNAMIC_DEFAULT =
-            Collections.unmodifiableList(Arrays.asList(TypeUseLocation.FIELD));
+            Collections.singletonList(TypeUseLocation.FIELD);
 
     /** Standard unchecked default locations that should be bottom. */
     public static final List<TypeUseLocation> STANDARD_UNCHECKED_DEFAULTS_BOTTOM =
