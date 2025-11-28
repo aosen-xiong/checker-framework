@@ -12,6 +12,7 @@ import com.sun.source.tree.VariableTree;
 import org.checkerframework.checker.initialization.InitializationFieldAccessTreeAnnotator;
 import org.checkerframework.checker.initialization.qual.UnderInitialization;
 import org.checkerframework.checker.pico.qual.Immutable;
+import org.checkerframework.checker.pico.qual.LazyFinal;
 import org.checkerframework.checker.pico.qual.Mutable;
 import org.checkerframework.checker.pico.qual.PICOBottom;
 import org.checkerframework.checker.pico.qual.PICOLost;
@@ -88,6 +89,10 @@ public class PICONoInitAnnotatedTypeFactory
     protected final AnnotationMirror BOTTOM =
             AnnotationBuilder.fromClass(elements, PICOBottom.class);
 
+    /** The {@link LazyFinal} annotation. */
+    protected final AnnotationMirror LAZY_FINAL =
+            AnnotationBuilder.fromClass(elements, LazyFinal.class);
+
     protected final AnnotationMirror UNDER_INITALIZATION =
             AnnotationBuilder.fromClass(elements, UnderInitialization.class);
 
@@ -103,6 +108,7 @@ public class PICONoInitAnnotatedTypeFactory
     public PICONoInitAnnotatedTypeFactory(BaseTypeChecker checker) {
         super(checker);
         addAliasedTypeAnnotation(org.jmlspecs.annotation.Readonly.class, READONLY);
+        addAliasedTypeAnnotation("jdk.internal.vm.annotation.Stable", LAZY_FINAL);
         postInit();
     }
 

@@ -12,6 +12,7 @@ import com.sun.tools.javac.code.Symbol;
 
 import org.checkerframework.checker.pico.qual.Assignable;
 import org.checkerframework.checker.pico.qual.Immutable;
+import org.checkerframework.checker.pico.qual.LazyFinal;
 import org.checkerframework.checker.pico.qual.ObjectIdentityMethod;
 import org.checkerframework.framework.qual.DefaultFor;
 import org.checkerframework.framework.qual.TypeKind;
@@ -215,6 +216,23 @@ public class PICOTypeUtil {
     }
 
     /**
+     * Check if a field is @LazyFinal.
+     *
+     * @param variableElement The field element
+     * @param provider The annotation provider
+     * @return true if the field is assignable
+     */
+    public static boolean isLazyField(Element variableElement, AnnotationProvider provider) {
+        if (!(variableElement instanceof VariableElement)) {
+            return false;
+        }
+        return provider.getDeclAnnotation(variableElement, LazyFinal.class) != null;
+        // TODO: static field handling?
+    }
+
+    /** Check if the field lazy final and */
+
+    /**
      * Check if a field is assignable. A field is assignable if it is static and not final, or has
      * explicit @Assignable
      *
@@ -233,8 +251,7 @@ public class PICOTypeUtil {
             return hasExplicitAssignableAnnotation;
         } else {
             // If there is explicit @Assignable annotation on static fields, then it's assignable;
-            // If there isn't,
-            // and the static field is not final, we treat it as if it's assignable field.
+            // If the static field is not explicit final, we treat it as if it's assignable field.
             return hasExplicitAssignableAnnotation || !isFinalField(variableElement);
         }
     }

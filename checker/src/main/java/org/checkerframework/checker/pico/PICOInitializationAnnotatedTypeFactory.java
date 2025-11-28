@@ -91,6 +91,7 @@ public class PICOInitializationAnnotatedTypeFactory extends InitializationAnnota
                         Element varElement = TreeUtils.elementFromDeclaration(var);
                         // If the field is annotated with @Assignable, return false
                         if (PICOTypeUtil.isAssignableField(varElement, this)
+                                || PICOTypeUtil.isLazyField(varElement, this)
                                 || ElementUtils.isStatic(varElement)) {
                             return true;
                         } else {
