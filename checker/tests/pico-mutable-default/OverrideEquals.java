@@ -39,7 +39,6 @@ public class OverrideEquals {
     class Test extends Throwable {
         @Override
         public String getMessage(@Readonly Test this) {
-            // :: error: (method.invocation.invalid)
             return super.getMessage();
         }
     }
