@@ -325,6 +325,7 @@ public class PICOTypeUtil {
      * @param treePath TreePath
      * @return true if the tree is in static scope, false otherwise
      */
+    // TODO(AOSEN): why filter out nested class?
     public static boolean inStaticScope(TreePath treePath) {
         boolean in = false;
         if (TreePathUtil.isTreeInStaticScope(treePath)) {

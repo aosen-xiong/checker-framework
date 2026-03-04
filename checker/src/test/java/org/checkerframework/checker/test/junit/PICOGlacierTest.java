@@ -9,7 +9,7 @@ import java.util.List;
 /** Glacier tests in PICO. */
 public class PICOGlacierTest extends CheckerFrameworkPerDirectoryTest {
     /**
-     * Create a PICOMutableDefaultTest.
+     * Create a PICOGlacierTest.
      *
      * @param testFiles the files containing test code, which will be type-checked
      */
@@ -22,8 +22,8 @@ public class PICOGlacierTest extends CheckerFrameworkPerDirectoryTest {
     }
 
     /**
-     * Returns the test files for the PICO Checker. The test files are in the
-     * "tests/pico-mutable-default" directory.
+     * Returns the test files for the PICO Checker. The test files are in the "tests/pico-glacier"
+     * directory.
      */
     @Parameterized.Parameters
     public static String[] getTestDirs() {
