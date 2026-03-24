@@ -42,7 +42,7 @@ else
 fi
 
 # Clone the annotated JDK into ../jdk .
-"$GIT_SCRIPTS/git-clone-related" ${DEBUG_FLAG} eisop jdk
+"$GIT_SCRIPTS/git-clone-related" eisop jdk ${DEBUG_FLAG}
 
 # AFU="${AFU:-../annotation-tools/annotation-file-utilities}"
 # # Don't use `AT=${AFU}/..` which causes a git failure.
