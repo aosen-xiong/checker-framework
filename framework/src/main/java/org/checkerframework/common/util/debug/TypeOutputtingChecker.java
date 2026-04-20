@@ -234,6 +234,13 @@ public class TypeOutputtingChecker extends BaseTypeChecker {
                         "GeneralQualifierHierarchy:getTopAnnotations() shouldn't be called");
             }
 
+            // Not needed - raises error.
+            @Override
+            public AnnotationMirrorSet getDynamicAnnotations() {
+                throw new BugInCF(
+                        "GeneralQualifierHierarchy:getDynamicAnnotations() shouldn't be called");
+            }
+
             // Not needed - should raise error. Unfortunately, in inference we ask for bottom
             // annotations.
             // Return a dummy value that does no harm.

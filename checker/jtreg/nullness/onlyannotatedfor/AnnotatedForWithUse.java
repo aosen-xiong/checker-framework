@@ -25,7 +25,7 @@ public class AnnotatedForWithUse {
         void use(Unannotated u) {
             // 1: OK, 2: OK, 3: Err
             @NonNull Object obj = u.o;
-            // 1. Err, 2: Err, TODO want OK, 3:  OK, TODO want Err
+            // 1. Err, 2: Err, TODO want OK, 3: Err
             u.o = null;
             // 1: OK, 2: OK, 3: Err
             u.get().toString();

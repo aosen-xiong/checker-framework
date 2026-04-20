@@ -23,6 +23,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.checker.nullness.qual.PolyNull;
+import org.checkerframework.checker.nullness.qual.ReadWriteDynamicNull;
 import org.checkerframework.checker.signature.qual.FullyQualifiedName;
 import org.checkerframework.common.basetype.BaseTypeChecker;
 import org.checkerframework.dataflow.cfg.node.Node;
@@ -375,11 +376,12 @@ public class NullnessNoInitAnnotatedTypeFactory
     public NullnessNoInitAnnotatedTypeFactory(BaseTypeChecker checker) {
         super(checker);
 
-        Set<Class<? extends Annotation>> tempNullnessAnnos = new LinkedHashSet<>(4);
+        Set<Class<? extends Annotation>> tempNullnessAnnos = new LinkedHashSet<>(5);
         tempNullnessAnnos.add(NonNull.class);
         tempNullnessAnnos.add(MonotonicNonNull.class);
         tempNullnessAnnos.add(Nullable.class);
         tempNullnessAnnos.add(PolyNull.class);
+        tempNullnessAnnos.add(ReadWriteDynamicNull.class);
         nullnessAnnos = Collections.unmodifiableSet(tempNullnessAnnos);
 
         NONNULL_ALIASES.forEach(annotation -> addAliasedTypeAnnotation(annotation, NONNULL));
@@ -449,7 +451,11 @@ public class NullnessNoInitAnnotatedTypeFactory
     protected Set<Class<? extends Annotation>> createSupportedTypeQualifiers() {
         return new LinkedHashSet<>(
                 Arrays.asList(
-                        Nullable.class, MonotonicNonNull.class, NonNull.class, PolyNull.class));
+                        Nullable.class,
+                        MonotonicNonNull.class,
+                        NonNull.class,
+                        PolyNull.class,
+                        ReadWriteDynamicNull.class));
     }
 
     /**
@@ -479,6 +485,29 @@ public class NullnessNoInitAnnotatedTypeFactory
                 } else if (inferred.isPolyNullNull) {
                     lhsType.replaceAnnotation(NULLABLE);
                 }
+            }
+        }
+    }
+
+    /**
+     * Replace ReadWriteDynamicNull with NonNull or Nullable based on (1) whether use conservative
+     * default or optimistic default and (2) which side of the assignment has ReadWriteDynamicNull.
+     *
+     * @param lhsType the left-hand side type
+     * @param rhsType the right-hand side type
+     */
+    protected void replaceRWNull(AnnotatedTypeMirror lhsType, AnnotatedTypeMirror rhsType) {
+        if (checker.useConservativeDefaultsSource) {
+            if (lhsType.hasAnnotation(ReadWriteDynamicNull.class)) {
+                lhsType.replaceAnnotation(NONNULL);
+            } else if (rhsType.hasAnnotation(ReadWriteDynamicNull.class)) {
+                rhsType.replaceAnnotation(NULLABLE);
+            }
+        } else {
+            if (lhsType.hasAnnotation(ReadWriteDynamicNull.class)) {
+                lhsType.replaceAnnotation(NULLABLE);
+            } else if (lhsType.hasAnnotation(ReadWriteDynamicNull.class)) {
+                rhsType.replaceAnnotation(NONNULL);
             }
         }
     }

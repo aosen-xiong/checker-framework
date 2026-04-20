@@ -78,6 +78,15 @@ public abstract class QualifierHierarchy {
     public abstract AnnotationMirrorSet getTopAnnotations();
 
     /**
+     * Returns the set of annotations that behaves dynamically under different defaults and
+     * different positions.
+     *
+     * @return the set of annotations that behaves dynamically under different defaults and
+     *     different positions
+     */
+    public abstract AnnotationMirrorSet getDynamicAnnotations();
+
+    /**
      * Returns true if the given qualifer is one of the top annotations for this qualifer hierarchy.
      *
      * @param qualifier any qualifier from one of the qualifier hierarchies represented by this

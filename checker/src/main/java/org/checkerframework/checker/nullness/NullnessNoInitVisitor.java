@@ -282,6 +282,9 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
                 return false;
             }
         }
+        // Let's only test with conservative defaults first, i.e. unannounced field is @NonNull in
+        // write and @Nullable in read.
+        atypeFactory.replaceRWNull(varType, valueType);
         return super.commonAssignmentCheck(varType, valueType, valueTree, errorKey, extraArgs);
     }
 
