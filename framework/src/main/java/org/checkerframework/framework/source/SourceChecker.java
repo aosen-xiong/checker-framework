@@ -2997,7 +2997,21 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
      * @param elt the source code element to check, or null
      * @return true if the element is annotated for this checker or an upstream checker
      */
-    protected abstract boolean isElementAnnotatedForThisCheckerOrUpstreamChecker(Element elt);
+    private boolean isElementAnnotatedForThisCheckerOrUpstreamChecker(Element elt) {
+        AnnotationProvider annotationProvider;
+        try {
+            annotationProvider = getAnnotationProvider();
+        } catch (UnsupportedOperationException e) {
+            throw new BugInCF(e, "Unexpected call to determine whether this checker is annotated");
+        }
+
+        if (annotationProvider instanceof AnnotatedTypeFactory) {
+            return ((AnnotatedTypeFactory) annotationProvider)
+                    .isElementAnnotatedForThisCheckerOrUpstreamChecker(elt);
+        }
+
+        return false;
+    }
 
     /**
      * Returns a modifiable set of lower-case strings that are prefixes for SuppressWarnings
