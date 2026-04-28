@@ -4098,8 +4098,8 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
     }
 
     /**
-     * Returns true if this type factory is currently parsing stub files or ajava files. While this is
-     * true, annotation-file-backed lookup may observe partially loaded annotation-file data.
+     * Returns true if this type factory is currently parsing stub files or ajava files. While this
+     * is true, annotation-file-backed lookup may observe partially loaded annotation-file data.
      *
      * @return true if stub files or ajava files are currently being parsed
      */
