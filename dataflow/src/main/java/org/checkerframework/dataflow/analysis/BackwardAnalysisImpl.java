@@ -358,8 +358,11 @@ public class BackwardAnalysisImpl<
             assert currentInput != null : "@AssumeAssertion(nullness): invariant";
             return currentInput.getRegularStore();
         }
+        setNodeValues(nodeValues);
         isRunning = true;
         try {
+            // Prepare cache (after the isRunning check to avoid creating empty cache entries when
+            // the analysis is already running)
             IdentityHashMap<Node, TransferResult<V, S>> cache;
             if (analysisCaches != null) {
                 cache =
