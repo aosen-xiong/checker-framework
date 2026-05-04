@@ -24,7 +24,8 @@ import java.lang.annotation.Target;
  *
  * Only {@code @Pure} provides both guarantees together: facts inferred from a {@code @Pure} call
  * survive across the call and across subsequent calls to the same method with the same arguments
- * and receiver.
+ * and receiver, provided those subsequent calls begin in the same relevant starting state (that
+ * is, with no intervening state changes that affect the method's result).
  *
  * <p>For a discussion of the meaning of {@code Pure} on a constructor, see the documentation of
  * {@link Deterministic}.

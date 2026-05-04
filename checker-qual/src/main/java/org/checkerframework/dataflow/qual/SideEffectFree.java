@@ -23,10 +23,11 @@ import java.lang.annotation.Target;
  * type-checker from making conclusions that are obvious to a programmer.
  *
  * <p>{@code @SideEffectFree} preserves facts <em>about heap</em> across the call. To
- * additionally guarantee that two calls to the <em>same</em> method return identical values (so a
- * property checked on the result of one call also holds on the result of a subsequent call), the
- * method must also be {@link Deterministic} — that is, {@link Pure}. See {@link Deterministic}
- * for an example of why {@code @Deterministic} alone is not sufficient.
+ * additionally guarantee that two calls to the <em>same</em> method return identical values when
+ * they start from the same environment (so a property checked on the result of one call also
+ * holds on the result of a subsequent call), the method must also be {@link Deterministic}; a
+ * method that is both {@code @SideEffectFree} and {@code @Deterministic} is {@link Pure}. See
+ * {@link Deterministic} for an example of why {@code @Deterministic} alone is not sufficient.
  *
  * <p>Also see {@link Pure}, which means both side-effect-free and {@link Deterministic}.
  *
