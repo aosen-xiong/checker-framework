@@ -15,7 +15,6 @@ import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedExecutab
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedTypeVariable;
 import org.checkerframework.javacutil.AbstractTypeProcessor;
 import org.checkerframework.javacutil.AnnotationProvider;
-import org.checkerframework.javacutil.BugInCF;
 import org.checkerframework.javacutil.ElementUtils;
 import org.checkerframework.javacutil.UserError;
 import org.plumelib.reflection.Signatures;
@@ -104,8 +103,10 @@ public class SignaturePrinter extends AbstractTypeProcessor {
                         @Override
                         public boolean isElementAnnotatedForThisCheckerOrUpstreamChecker(
                                 Element elt) {
-                            throw new BugInCF(
-                                    "Unexpected call to determine whether this checker is annotated");
+                            // SignaturePrinter only prints signatures; it does not perform any
+                            // type-checking. Returning false keeps callers (e.g.,
+                            // QualifierDefaults) on safe defaults rather than crashing.
+                            return false;
                         }
 
                         @Override

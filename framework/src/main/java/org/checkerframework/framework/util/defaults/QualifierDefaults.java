@@ -748,6 +748,18 @@ public class QualifierDefaults {
             return false;
         }
 
+        // Skip the conservative-defaults check while annotation files are being parsed, to avoid
+        // an initialization cycle. During GenericAnnotatedTypeFactory.postInit(),
+        // parseAnnotationFiles()
+        // runs the stub/ajava parser, which asks the type factory for defaulted types. That reaches
+        // here and would call checker.isElementAnnotatedForThisCheckerOrUpstreamChecker(...), which
+        // routes through BaseTypeChecker.getTypeFactory() — but the visitor (and thus the type
+        // factory) is not yet installed on the checker, causing an NPE. Eagerly-parsed annotation
+        // files (checker @StubFiles, command-line stubs, ajava files, annotated-JDK
+        // package-info.java)
+        // are the risky cases; most JDK class stubs are only parsed lazily after init completes.
+        // Stub-file elements are still treated as checked code by the isFromStubFile branch below
+        // once parsing has finished.
         if (atypeFactory.isParsingAnnotationFiles()) {
             return false;
         }

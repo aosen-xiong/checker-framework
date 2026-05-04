@@ -2789,10 +2789,9 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
                     if (shouldSuppressWarnings(packageElement, errKey)) {
                         return true;
                     }
-
-                    if (isElementAnnotatedForThisCheckerOrUpstreamChecker(packageElement)) {
-                        return false;
-                    }
+                    // No need to call isElementAnnotatedForThisCheckerOrUpstreamChecker on the
+                    // package: the call above on the class element already walks enclosing
+                    // elements (including the package) recursively.
                 }
             } else {
                 throw new BugInCF("Unexpected declaration kind: " + decl.getKind() + " " + decl);
@@ -2867,6 +2866,9 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
                     }
                     return true;
                 }
+            }
+            if (isAnnotatedForThisCheckerOrUpstreamChecker(elt)) {
+                return false;
             }
         }
         return false;
@@ -2999,7 +3001,8 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
      * @param elt the source code element to check, or null
      * @return true if the element is annotated for this checker or an upstream checker
      */
-    public abstract boolean isElementAnnotatedForThisCheckerOrUpstreamChecker(Element elt);
+    public abstract boolean isElementAnnotatedForThisCheckerOrUpstreamChecker(
+            @Nullable Element elt);
 
     /**
      * Returns a modifiable set of lower-case strings that are prefixes for SuppressWarnings

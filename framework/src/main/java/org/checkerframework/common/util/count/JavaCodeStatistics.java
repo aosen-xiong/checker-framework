@@ -17,7 +17,6 @@ import org.checkerframework.framework.source.SourceChecker;
 import org.checkerframework.framework.source.SourceVisitor;
 import org.checkerframework.javacutil.AnnotationProvider;
 import org.checkerframework.javacutil.AnnotationUtils;
-import org.checkerframework.javacutil.BugInCF;
 import org.checkerframework.javacutil.TreeUtils;
 
 import java.util.List;
@@ -208,6 +207,8 @@ public class JavaCodeStatistics extends SourceChecker {
 
     @Override
     public boolean isElementAnnotatedForThisCheckerOrUpstreamChecker(Element elt) {
-        throw new BugInCF("Unexpected call to determine whether this checker is annotated");
+        // This checker only counts code; it does not perform any type-checking. Returning false
+        // keeps callers (e.g., QualifierDefaults) on safe defaults rather than crashing.
+        return false;
     }
 }
