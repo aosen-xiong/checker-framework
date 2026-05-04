@@ -2875,11 +2875,6 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
                     return true;
                 }
             }
-            if (isAnnotatedForThisCheckerOrUpstreamChecker(elt)) {
-                // Return false immediately. Do NOT check for AnnotatedFor in the
-                // enclosing elements, because they may not have an @AnnotatedFor.
-                return false;
-            }
         }
         return false;
     }
