@@ -73,4 +73,12 @@ public class AnnotatedForNullness {
         annotatedForNullness(initializedField);
         annotatedForNullnessAndInitialization(initializedField);
     }
+
+    @SuppressWarnings("nullness")
+    class SuppressWarningsClassWithAnnotatedForMethod {
+        @AnnotatedFor("nullness")
+        @NonNull Object m() {
+            return null;
+        }
+    }
 }

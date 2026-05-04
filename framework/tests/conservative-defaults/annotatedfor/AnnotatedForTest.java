@@ -247,4 +247,14 @@ public class AnnotatedForTest {
             so4 = staticUnannotatedMethod(so1);
         }
     }
+
+    // Class-level @SuppressWarnings("subtyping") should override a method-level
+    // @AnnotatedFor("subtyping")
+    @SuppressWarnings("subtyping")
+    class SuppressWarningsClassWithAnnotatedForMethod {
+        @AnnotatedFor("subtyping")
+        @SubQual Object m(@SuperQual Object p) {
+            return p;
+        }
+    }
 }
