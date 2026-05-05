@@ -74,6 +74,8 @@ public class AnnotatedForNullness {
         annotatedForNullnessAndInitialization(initializedField);
     }
 
+    // Class-level @SuppressWarnings("nullness") should override a method-level
+    // @AnnotatedFor("nullness")
     @SuppressWarnings("nullness")
     class SuppressWarningsClassWithAnnotatedForMethod {
         @AnnotatedFor("nullness")
