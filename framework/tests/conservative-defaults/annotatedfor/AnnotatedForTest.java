@@ -248,8 +248,8 @@ public class AnnotatedForTest {
         }
     }
 
-    // Class-level @SuppressWarnings("subtyping") should override a method-level
-    // @AnnotatedFor("subtyping")
+    // @SuppressWarnings("subtyping") should suppress all subtying diagnostics within the annotated declaration's scope,
+    // including those in nested @AnnotatedFor("subtyping") scopes.
     @SuppressWarnings("subtyping")
     class SuppressWarningsClassWithAnnotatedForMethod {
         @AnnotatedFor("subtyping")
