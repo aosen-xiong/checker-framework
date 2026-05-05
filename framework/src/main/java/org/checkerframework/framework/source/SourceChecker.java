@@ -2867,9 +2867,6 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
                     return true;
                 }
             }
-            if (isElementAnnotatedForThisCheckerOrUpstreamChecker(elt)) {
-                return false;
-            }
         }
         return false;
     }
