@@ -13,5 +13,6 @@ public class RequiresPrivateField {
 
 class PptCombined {
 
+    // :: warning: (monotonicnonnull.on.static.field)
     @SpecPublic private static @MonotonicNonNull String assemblies = null;
 }

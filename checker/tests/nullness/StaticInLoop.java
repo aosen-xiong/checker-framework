@@ -3,6 +3,7 @@ import org.checkerframework.dataflow.qual.*;
 
 public final class StaticInLoop {
 
+    // :: warning: (monotonicnonnull.on.static.field)
     public static @MonotonicNonNull String data_trace_state = null;
 
     @RequiresNonNull("StaticInLoop.data_trace_state")

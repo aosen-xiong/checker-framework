@@ -12,6 +12,7 @@ import java.util.Map;
 
 public class Issue1817 {
 
+    // :: warning: (monotonicnonnull.on.static.field)
     public static @MonotonicNonNull Map<Class<?>, List<Object>> suppressor_map;
 
     @RequiresNonNull("suppressor_map")

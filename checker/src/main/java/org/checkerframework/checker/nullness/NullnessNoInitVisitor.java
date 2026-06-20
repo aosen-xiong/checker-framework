@@ -50,6 +50,7 @@ import org.checkerframework.framework.type.AnnotatedTypeMirror;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedArrayType;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedExecutableType;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedPrimitiveType;
+import org.checkerframework.framework.util.AnnotatedTypes;
 import org.checkerframework.javacutil.AnnotationMirrorSet;
 import org.checkerframework.javacutil.AnnotationUtils;
 import org.checkerframework.javacutil.ElementUtils;
@@ -99,6 +100,10 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
     /** Error message key. */
     private static final @CompilerMessageKey String DEREFERENCE_OF_NULLABLE =
             "dereference.of.nullable";
+
+    /** Warning message key. */
+    private static final @CompilerMessageKey String MONOTONIC_NONNULL_ON_STATIC_FIELD =
+            "monotonicnonnull.on.static.field";
 
     /** Annotation mirrors for nullness annotations. */
     private final AnnotationMirror NONNULL, NULLABLE, MONOTONIC_NONNULL, POLYNULL;
@@ -643,6 +648,18 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
             return literal;
         }
         return null;
+    }
+
+    @Override
+    public Void visitVariable(VariableTree tree, Void p) {
+        Element element = TreeUtils.elementFromDeclaration(tree);
+        if (element.getKind() == ElementKind.FIELD
+                && ElementUtils.isStatic(element)
+                && AnnotatedTypes.containsModifier(
+                        atypeFactory.getAnnotatedType(tree), MONOTONIC_NONNULL)) {
+            checker.reportWarning(tree, MONOTONIC_NONNULL_ON_STATIC_FIELD);
+        }
+        return super.visitVariable(tree, p);
     }
 
     @Override
