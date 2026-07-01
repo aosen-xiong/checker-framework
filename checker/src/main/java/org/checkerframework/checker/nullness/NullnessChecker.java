@@ -61,6 +61,7 @@ import javax.annotation.processing.SupportedOptions;
 @SupportedOptions({
     "assumeKeyFor",
     "assumeInitialized",
+    "exportNullnessTrace",
     "jspecifyNullMarkedAlias",
     "conservativeArgumentNullnessAfterInvocation"
 })

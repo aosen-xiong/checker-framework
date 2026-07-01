@@ -14,6 +14,8 @@ import org.checkerframework.framework.source.SourceChecker;
 import java.util.NavigableSet;
 import java.util.Set;
 
+import javax.annotation.processing.SupportedOptions;
+
 /**
  * The subchecker of the {@link NullnessChecker} which actually checks {@link NonNull} and related
  * qualifiers.
@@ -37,6 +39,7 @@ import java.util.Set;
  * </ul>
  */
 @StubFiles({"junit-assertions.astub"})
+@SupportedOptions({"exportNullnessTrace"})
 public class NullnessNoInitSubchecker extends BaseTypeChecker {
 
     /** Default constructor for NonNullChecker. */

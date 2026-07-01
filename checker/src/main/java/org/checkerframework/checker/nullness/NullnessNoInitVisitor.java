@@ -714,10 +714,34 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
     private boolean checkForNullability(
             AnnotatedTypeMirror type, Tree tree, @CompilerMessageKey String errMsg) {
         if (!type.hasEffectiveAnnotation(NONNULL)) {
+            if (DEREFERENCE_OF_NULLABLE.equals(errMsg)) {
+                traceNullnessDereference(type, NONNULL, tree, errMsg);
+            } else {
+                String traceKind = nonNullCheckTraceKind(errMsg);
+                if (traceKind != null) {
+                    traceNullnessNonNullCheck(traceKind, type, NONNULL, tree, errMsg);
+                }
+            }
             checker.reportError(tree, errMsg, tree);
             return false;
         }
         return true;
+    }
+
+    private @Nullable String nonNullCheckTraceKind(@CompilerMessageKey String errMsg) {
+        if (CONDITION_NULLABLE.equals(errMsg)) {
+            return "condition";
+        }
+        if (UNBOXING_OF_NULLABLE.equals(errMsg)) {
+            return "unboxing";
+        }
+        if (ACCESSING_NULLABLE.equals(errMsg)) {
+            return "array_access";
+        }
+        if (ITERATING_NULLABLE.equals(errMsg)) {
+            return "iteration";
+        }
+        return null;
     }
 
     @Override

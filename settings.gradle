@@ -1,5 +1,6 @@
 rootProject.name = 'checker-framework'
 include 'checker'
+include 'checker_reconcile'
 include 'checker-qual'
 include 'checker-qual-android'
 include 'checker-util'

@@ -213,6 +213,24 @@ public class BaseTypeVisitor<Factory extends GenericAnnotatedTypeFactory<?, ?, ?
     /** For obtaining line numbers in {@code -Ashowchecks} debugging output. */
     protected final SourcePositions positions;
 
+    /** Trace sink for the Nullness Checker reconciliation prototype. */
+    private final NullnessTraceSink nullnessTraceSink;
+
+    /** The current assignment LHS, when one is available to trace. */
+    private @Nullable Tree currentAssignmentLhs;
+
+    /** The current expected-side declaration tree, when one is available to trace. */
+    private @Nullable Tree currentTraceExpectedTree;
+
+    /** The current invocation tree, when tracing a method or constructor argument. */
+    private @Nullable Tree currentTraceInvocationTree;
+
+    /** The current invocation path, when tracing a method or constructor argument. */
+    private @Nullable TreePath currentTraceInvocationPath;
+
+    /** The current argument index, when tracing a method or constructor argument. */
+    private int currentTraceArgumentIndex = -1;
+
     /** The element for java.util.Vector#copyInto. */
     private final ExecutableElement vectorCopyInto;
 
@@ -353,6 +371,7 @@ public class BaseTypeVisitor<Factory extends GenericAnnotatedTypeFactory<?, ?, ?
         this.qualHierarchy = atypeFactory.getQualifierHierarchy();
         this.typeHierarchy = atypeFactory.getTypeHierarchy();
         this.positions = trees.getSourcePositions();
+        this.nullnessTraceSink = NullnessTraceSink.create(checker);
         this.typeValidator = createTypeValidator();
         ProcessingEnvironment env = checker.getProcessingEnvironment();
         this.vectorCopyInto = TreeUtils.getMethod("java.util.Vector", "copyInto", 1, env);
@@ -2249,7 +2268,16 @@ public class BaseTypeVisitor<Factory extends GenericAnnotatedTypeFactory<?, ?, ?
                 methodName,
                 invokedMethod.getTypeVariables());
         List<AnnotatedTypeMirror> params = invokedMethod.getParameterTypes();
-        checkArguments(params, tree.getArguments(), methodName, method.getParameters());
+        Tree previousTraceInvocationTree = currentTraceInvocationTree;
+        TreePath previousTraceInvocationPath = currentTraceInvocationPath;
+        currentTraceInvocationTree = tree;
+        currentTraceInvocationPath = getCurrentPath();
+        try {
+            checkArguments(params, tree.getArguments(), methodName, method.getParameters());
+        } finally {
+            currentTraceInvocationTree = previousTraceInvocationTree;
+            currentTraceInvocationPath = previousTraceInvocationPath;
+        }
         checkVarargs(invokedMethod, tree);
 
         if (ElementUtils.isMethod(
@@ -2634,7 +2662,16 @@ public class BaseTypeVisitor<Factory extends GenericAnnotatedTypeFactory<?, ?, ?
         ExecutableElement constructor = constructorType.getElement();
         CharSequence constructorName = ElementUtils.getSimpleDescription(constructor);
 
-        checkArguments(params, passedArguments, constructorName, constructor.getParameters());
+        Tree previousTraceInvocationTree = currentTraceInvocationTree;
+        TreePath previousTraceInvocationPath = currentTraceInvocationPath;
+        currentTraceInvocationTree = tree;
+        currentTraceInvocationPath = getCurrentPath();
+        try {
+            checkArguments(params, passedArguments, constructorName, constructor.getParameters());
+        } finally {
+            currentTraceInvocationTree = previousTraceInvocationTree;
+            currentTraceInvocationPath = previousTraceInvocationPath;
+        }
         checkVarargs(constructorType, tree);
 
         List<AnnotatedTypeParameterBounds> paramBounds =
@@ -2738,8 +2775,14 @@ public class BaseTypeVisitor<Factory extends GenericAnnotatedTypeFactory<?, ?, ?
         }
 
         if (declaredReturnType != null) {
-            commonAssignmentCheck(
-                    declaredReturnType, tree.getExpression(), "return.type.incompatible");
+            Tree previousTraceExpectedTree = currentTraceExpectedTree;
+            currentTraceExpectedTree = enclosing instanceof MethodTree ? enclosing : null;
+            try {
+                commonAssignmentCheck(
+                        declaredReturnType, tree.getExpression(), "return.type.incompatible");
+            } finally {
+                currentTraceExpectedTree = previousTraceExpectedTree;
+            }
         }
         Void result = super.visitReturn(tree, p);
 
@@ -3571,7 +3614,31 @@ public class BaseTypeVisitor<Factory extends GenericAnnotatedTypeFactory<?, ?, ?
             return true;
         }
 
-        return commonAssignmentCheck(varType, valueExpTree, errorKey, extraArgs);
+        Tree previousAssignmentLhs = currentAssignmentLhs;
+        Tree previousTraceExpectedTree = currentTraceExpectedTree;
+        currentAssignmentLhs = varTree;
+        currentTraceExpectedTree = traceExpectedDeclarationTree(varTree);
+        try {
+            return commonAssignmentCheck(varType, valueExpTree, errorKey, extraArgs);
+        } finally {
+            currentAssignmentLhs = previousAssignmentLhs;
+            currentTraceExpectedTree = previousTraceExpectedTree;
+        }
+    }
+
+    private @Nullable Tree traceExpectedDeclarationTree(Tree varTree) {
+        if (varTree instanceof VariableTree) {
+            return varTree;
+        }
+        if (varTree instanceof ExpressionTree) {
+            try {
+                Element element = TreeUtils.elementFromUse((ExpressionTree) varTree);
+                return trees.getTree(element);
+            } catch (RuntimeException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     /**
@@ -3677,6 +3744,8 @@ public class BaseTypeVisitor<Factory extends GenericAnnotatedTypeFactory<?, ?, ?
 
         AnnotatedTypeMirror widenedValueType = atypeFactory.getWidenedType(valueType, varType);
         boolean result = typeHierarchy.isSubtype(widenedValueType, varType);
+        traceSubtypeObligation(
+                errorKey, widenedValueType, varType, valueExpTree, result, extraArgs);
 
         // TODO: integrate with subtype test.
         if (result) {
@@ -3726,6 +3795,191 @@ public class BaseTypeVisitor<Factory extends GenericAnnotatedTypeFactory<?, ?, ?
                 valueTree,
                 errorKey,
                 ArraysPlume.concatenate(extraArgs, valueTypeString, varTypeString));
+    }
+
+    /**
+     * Emits a trace event for a common-assignment subtype decision, if Nullness trace export is
+     * enabled.
+     *
+     * @param errorKey the diagnostic key associated with the subtype check
+     * @param got the actual type
+     * @param want the expected type
+     * @param valueTree the tree for the actual value
+     * @param success whether the subtype check succeeded
+     * @param extraArgs arguments to the diagnostic key before found/required types
+     */
+    private void traceSubtypeObligation(
+            @CompilerMessageKey String errorKey,
+            AnnotatedTypeMirror got,
+            AnnotatedTypeMirror want,
+            Tree valueTree,
+            boolean success,
+            Object... extraArgs) {
+        nullnessTraceSink.emitSubtypeObligation(
+                traceObligationKind(errorKey),
+                errorKey,
+                got,
+                want,
+                "expr:" + valueTree,
+                expectedSlot(errorKey, extraArgs),
+                traceDiagnosticMessage(errorKey, got, want, extraArgs),
+                success,
+                valueTree,
+                currentTraceExpectedTree != null ? currentTraceExpectedTree : currentAssignmentLhs,
+                currentTraceInvocationTree,
+                currentTraceInvocationPath,
+                currentTraceArgumentIndex,
+                errorKey.equals("argument.type.incompatible") && extraArgs.length > 0
+                        ? extraArgs[0]
+                        : null,
+                root,
+                positions);
+    }
+
+    /** Returns the V0 trace obligation kind for a Checker Framework diagnostic key. */
+    private String traceObligationKind(String errorKey) {
+        if (errorKey.equals("argument.type.incompatible")) {
+            return "method_argument";
+        }
+        if (errorKey.equals("return.type.incompatible")) {
+            return "return";
+        }
+        if (currentAssignmentLhs instanceof MemberSelectTree) {
+            return "field_assignment";
+        }
+        return "assignment";
+    }
+
+    /** Returns the expected-side slot label for a common-assignment trace event. */
+    private String expectedSlot(String errorKey, Object... extraArgs) {
+        if (errorKey.equals("argument.type.incompatible")) {
+            return extraArgs.length > 0 ? "parameter:" + extraArgs[0] : "parameter";
+        }
+        if (errorKey.equals("return.type.incompatible")) {
+            return "return";
+        }
+        if (currentAssignmentLhs == null) {
+            return "target";
+        }
+        if (currentAssignmentLhs instanceof MemberSelectTree) {
+            return "field:" + currentAssignmentLhs;
+        }
+        if (currentAssignmentLhs instanceof IdentifierTree) {
+            return "local:" + currentAssignmentLhs;
+        }
+        if (currentAssignmentLhs instanceof VariableTree) {
+            VariableTree variableTree = (VariableTree) currentAssignmentLhs;
+            return "local:" + variableTree.getName();
+        }
+        return "target:" + currentAssignmentLhs;
+    }
+
+    /** Returns the V0 diagnostic message text for a common-assignment trace event. */
+    private String traceDiagnosticMessage(
+            String errorKey,
+            AnnotatedTypeMirror got,
+            AnnotatedTypeMirror want,
+            Object... extraArgs) {
+        FoundRequired pair = FoundRequired.of(got, want);
+        String found = pair.found.toString();
+        String required = pair.required.toString();
+        if (errorKey.equals("return.type.incompatible")) {
+            return String.format(
+                    "incompatible types in return.%ntype of expression: %s%nmethod return type: %s",
+                    found, required);
+        }
+        if (errorKey.equals("argument.type.incompatible") && extraArgs.length >= 2) {
+            return String.format(
+                    "incompatible argument for parameter %s of %s.%nfound   : %s%nrequired: %s",
+                    extraArgs[0], extraArgs[1], found, required);
+        }
+        if (errorKey.equals("assignment.type.incompatible")) {
+            return String.format(
+                    "incompatible types in assignment.%nfound   : %s%nrequired: %s",
+                    found, required);
+        }
+        return errorKey;
+    }
+
+    /** Returns the receiver slot label for a method invocation. */
+    private String receiverSlot(MethodInvocationTree tree) {
+        ExpressionTree receiver = TreeUtils.getReceiverTree(tree);
+        return receiver == null ? "this" : receiver.toString();
+    }
+
+    /**
+     * Emits a Nullness trace obligation for a nullable receiver dereference.
+     *
+     * @param receiverType the receiver expression type
+     * @param nonNullAnnotation the checker-specific {@code @NonNull} annotation mirror
+     * @param receiverTree the receiver expression tree
+     * @param errorKey the reported diagnostic key
+     */
+    protected final void traceNullnessDereference(
+            AnnotatedTypeMirror receiverType,
+            AnnotationMirror nonNullAnnotation,
+            Tree receiverTree,
+            @CompilerMessageKey String errorKey) {
+        AnnotatedTypeMirror expectedReceiver = receiverType.shallowCopy(false);
+        expectedReceiver.addAnnotation(nonNullAnnotation);
+        nullnessTraceSink.emitSubtypeObligation(
+                "dereference",
+                errorKey,
+                receiverType,
+                expectedReceiver,
+                "receiver:" + receiverTree,
+                "method-contract:nonnull-receiver",
+                String.format(
+                        "dereference of possibly-null reference %s.%nfound   : %s%nrequired: %s",
+                        receiverTree, receiverType, expectedReceiver),
+                false,
+                receiverTree,
+                receiverTree,
+                null,
+                null,
+                -1,
+                null,
+                root,
+                positions);
+    }
+
+    /**
+     * Emits a Nullness trace obligation for an expression that must be non-null in a specific
+     * syntactic context.
+     *
+     * @param kind the trace obligation kind
+     * @param actualType the expression type
+     * @param nonNullAnnotation the checker-specific {@code @NonNull} annotation mirror
+     * @param tree the expression tree
+     * @param errorKey the reported diagnostic key
+     */
+    protected final void traceNullnessNonNullCheck(
+            String kind,
+            AnnotatedTypeMirror actualType,
+            AnnotationMirror nonNullAnnotation,
+            Tree tree,
+            @CompilerMessageKey String errorKey) {
+        AnnotatedTypeMirror expectedType = actualType.shallowCopy(false);
+        expectedType.addAnnotation(nonNullAnnotation);
+        nullnessTraceSink.emitSubtypeObligation(
+                kind,
+                errorKey,
+                actualType,
+                expectedType,
+                kind + ":" + tree,
+                "nonnull-contract:" + kind,
+                String.format(
+                        "expression %s must be non-null for %s.%nfound   : %s%nrequired: %s",
+                        tree, kind, actualType, expectedType),
+                false,
+                tree,
+                tree,
+                null,
+                null,
+                -1,
+                null,
+                root,
+                positions);
     }
 
     /**
@@ -4228,6 +4482,26 @@ public class BaseTypeVisitor<Factory extends GenericAnnotatedTypeFactory<?, ?, ?
             // `tree` is the entire method invocation (where the receiver might be implicit).
             commonAssignmentCheckStartDiagnostic(methodReceiver, erasedTreeReceiver, tree);
             boolean success = typeHierarchy.isSubtype(erasedTreeReceiver, erasedMethodReceiver);
+            ExpressionTree receiverTree = TreeUtils.getReceiverTree(tree);
+            nullnessTraceSink.emitSubtypeObligation(
+                    "dereference",
+                    "method.invocation.invalid",
+                    treeReceiver,
+                    methodReceiver,
+                    "receiver:" + receiverSlot(tree),
+                    "method-contract:" + method.getElement(),
+                    String.format(
+                            "call to %s not allowed on the given receiver.%nfound   : %s%nrequired: %s",
+                            method.getElement(), treeReceiver, methodReceiver),
+                    success,
+                    receiverTree == null ? tree : receiverTree,
+                    tree,
+                    null,
+                    null,
+                    -1,
+                    null,
+                    root,
+                    positions);
             commonAssignmentCheckEndDiagnostic(
                     success, null, methodReceiver, erasedTreeReceiver, tree);
             if (!success) {
@@ -4373,13 +4647,23 @@ public class BaseTypeVisitor<Factory extends GenericAnnotatedTypeFactory<?, ?, ?
             AnnotatedTypeMirror requiredType = requiredTypes.get(i);
             ExpressionTree passedArg = passedArgs.get(i);
             Object paramName = paramNames.get(Math.min(i, maxParamNamesIndex));
-            commonAssignmentCheck(
-                    requiredType,
-                    passedArg,
-                    "argument.type.incompatible",
-                    // TODO: for expanded varargs parameters, maybe adjust the name
-                    paramName,
-                    executableName);
+            Tree previousTraceExpectedTree = currentTraceExpectedTree;
+            int previousTraceArgumentIndex = currentTraceArgumentIndex;
+            currentTraceExpectedTree =
+                    paramName instanceof Element ? trees.getTree((Element) paramName) : null;
+            currentTraceArgumentIndex = i;
+            try {
+                commonAssignmentCheck(
+                        requiredType,
+                        passedArg,
+                        "argument.type.incompatible",
+                        // TODO: for expanded varargs parameters, maybe adjust the name
+                        paramName,
+                        executableName);
+            } finally {
+                currentTraceExpectedTree = previousTraceExpectedTree;
+                currentTraceArgumentIndex = previousTraceArgumentIndex;
+            }
             scan(passedArg, null);
         }
     }
