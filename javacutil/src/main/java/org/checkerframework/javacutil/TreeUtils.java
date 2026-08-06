@@ -1239,14 +1239,26 @@ public final class TreeUtils {
     /**
      * Is the given tree a type instantiation?
      *
-     * <p>TODO: this is an under-approximation: e.g. an identifier could be either a type use or an
-     * expression. How can we distinguish.
+     * <p>An identifier is ambiguous: it is a type use in {@code class C extends Base {}} but an
+     * expression in {@code base = null}. This method resolves the ambiguity by asking what the
+     * identifier refers to, so it requires an attributed tree.
+     *
+     * <p>A qualified type such as {@code Outer.Inner} is a {@code MEMBER_SELECT} and is still
+     * under-approximated, because javac writes an annotation on it as {@code Outer.@Anno Inner},
+     * which is an {@code ANNOTATED_TYPE} on every supported JDK.
      *
      * @param tree the tree to test
      * @return true, iff the given tree is a type
      */
     public static boolean isTypeTree(Tree tree) {
-        return typeTreeKinds().contains(tree.getKind());
+        if (typeTreeKinds().contains(tree.getKind())) {
+            return true;
+        }
+        if (tree instanceof IdentifierTree) {
+            Element elt = elementFromTree(tree);
+            return elt != null && ElementUtils.isTypeElement(elt);
+        }
+        return false;
     }
 
     /**
