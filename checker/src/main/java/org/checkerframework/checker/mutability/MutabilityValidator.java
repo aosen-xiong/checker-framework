@@ -132,9 +132,39 @@ public class MutabilityValidator extends BaseTypeValidator {
     private void checkStaticReceiverDependentMutableError(AnnotatedTypeMirror type, Tree tree) {
         if (!type.isDeclaration()
                 && TreePathUtil.isTreeInStaticScope(visitor.getCurrentPath())
+                && !isClassBoundClause(tree)
                 && type.hasAnnotation(mutabilityTypeFactory.RECEIVER_DEPENDENT_MUTABLE)) {
             reportValidityResult("static.receiverdependentmutable.forbidden", type, tree);
         }
+    }
+
+    /**
+     * Returns whether {@code tree} is the extends clause or one of the implements clauses of the
+     * enclosing class declaration.
+     *
+     * <p>Such a clause names a class BOUND, not a type use that needs a receiver, so
+     * {@code @ReceiverDependentMutable} is legal there even though a nested class or interface is
+     * implicitly static. {@code java.util.Spliterator.OfPrimitive} and
+     * {@code Spliterator.OfInt} are the motivating cases; see
+     * {@code tests/pico-mutable-default/StaticRdmExtendsClause.java}.
+     *
+     * @param tree the tree being validated
+     * @return true if {@code tree} is an extends or implements clause of the enclosing class
+     */
+    private boolean isClassBoundClause(Tree tree) {
+        ClassTree enclosing = TreePathUtil.enclosingClass(visitor.getCurrentPath());
+        if (enclosing == null) {
+            return false;
+        }
+        if (tree == enclosing.getExtendsClause()) {
+            return true;
+        }
+        for (Tree implemented : enclosing.getImplementsClause()) {
+            if (tree == implemented) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
