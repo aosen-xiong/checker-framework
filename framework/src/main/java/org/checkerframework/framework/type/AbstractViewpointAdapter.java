@@ -148,6 +148,8 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
         constructorType.setParameterTypes(unsubstitutedConstructorType.getParameterTypes());
         constructorType.setTypeVariables(unsubstitutedConstructorType.getTypeVariables());
         constructorType.setReturnType(unsubstitutedConstructorType.getReturnType());
+        // Recompute the vararg type to ensure it corresponds to the newly updated parameter list.
+        constructorType.computeVarargType();
     }
 
     @Override
@@ -214,6 +216,8 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
         methodType.setReceiverType(unsubstitutedMethodType.getReceiverType());
         methodType.setParameterTypes(unsubstitutedMethodType.getParameterTypes());
         methodType.setTypeVariables(unsubstitutedMethodType.getTypeVariables());
+        // Recompute the vararg type to ensure it corresponds to the newly updated parameter list.
+        methodType.computeVarargType();
     }
 
     /**
@@ -516,11 +520,15 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
         for (AnnotatedTypeMirror bound : bounds) {
             adaptedBounds.add(adaptBound.apply(bound));
         }
-        // First replace the bounds copied by shallowCopy with the adapted bounds. Then clear the
-        // shallow copy's stale primary annotations and recompute them from the adapted bounds.
+        // Replace the bounds copied by shallowCopy with the adapted bounds, then recompute the
+        // intersection's own primary annotation from them. summarizeBounds reads each bound's own
+        // annotations, so it must run directly on the adapted bounds -- do not clear here first,
+        // which (since AnnotatedIntersectionType#clearAnnotations also clears every bound) would
+        // discard adaptBound's results before summarizeBounds ever sees them. This clear was
+        // already a no-op before that change too: shallowCopy(false) leaves the intersection's own
+        // primary annotation empty, which is all this call ever cleared.
         intersection.setBounds(adaptedBounds);
-        intersection.clearAnnotations();
-        intersection.copyIntersectionBoundAnnotations();
+        intersection.summarizeBounds();
         return intersection;
     }
 

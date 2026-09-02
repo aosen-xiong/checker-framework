@@ -33,7 +33,6 @@ import org.checkerframework.common.basetype.BaseTypeChecker;
 import org.checkerframework.common.reflection.MethodValChecker;
 import org.checkerframework.framework.qual.AnnotatedFor;
 import org.checkerframework.framework.type.AnnotatedTypeFactory;
-import org.checkerframework.framework.util.CheckerMain;
 import org.checkerframework.framework.util.OptionConfiguration;
 import org.checkerframework.framework.util.TreePathCacher;
 import org.checkerframework.javacutil.AbstractTypeProcessor;
@@ -153,7 +152,7 @@ import javax.tools.Diagnostic;
     // only issue errors for code inside the scope of `@NullMarked` annotations.
     // See
     // https://github.com/uber/NullAway/wiki/Configuration#only-nullmarked-version-0123-and-after.
-    // org.checkerframework.framework.source.SourceChecker.isAnnotatedForThisCheckerOrUpstreamChecker
+    // org.checkerframework.framework.source.SourceChecker.isElementAnnotatedForThisCheckerOrUpstreamChecker
     "onlyAnnotatedFor",
 
     // Unsoundly assume all methods have no side effects, are deterministic, or both.
@@ -204,6 +203,13 @@ import javax.tools.Diagnostic;
 
     // Whether to type check the enclosing expression of an inner class instantiation.
     "checkEnclosingExpr",
+
+    // Whether to use optimistic defaults for bytecode and/or source code.
+    // This option takes the same arguments as "useConservativeDefaultsForUncheckedCode", and like
+    // it, applies only outside the scope of an @AnnotatedFor.  It does not suppress warnings in
+    // that code; combine it with -AonlyAnnotatedFor to do that.  A given kind of code cannot be
+    // defaulted both optimistically and conservatively.
+    "useOptimisticDefaultsForUncheckedCode",
 
     // Whether to use conservative defaults for bytecode and/or source code.
     // This option takes arguments "source" and/or "bytecode".
@@ -1176,6 +1182,8 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
         // Set the active options for this checker and all subcheckers.
         getOptions();
 
+        checkOptimisticAndConservativeDefaults();
+
         // Initialize all checkers and share supported lint options.
         for (SourceChecker checker : getSubcheckers()) {
             // Each checker should "support" all possible lint options - otherwise
@@ -1191,6 +1199,15 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
 
         if (!getSubcheckers().isEmpty() && parentChecker == null) {
             messageStore = new TreeSet<>();
+        }
+
+        Collection<String> prefixes = getSuppressWarningsPrefixes();
+        if (prefixes.isEmpty()
+                || (prefixes.size() == 1 && prefixes.contains(SUPPRESS_ALL_PREFIX))) {
+            throw new BugInCF(
+                    "Checker must provide a SuppressWarnings prefix."
+                            + " SourceChecker#getSuppressWarningsPrefixes was not overridden"
+                            + " correctly.");
         }
 
         // Validate the lint flags, if they haven't been used already.
@@ -2785,21 +2802,6 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
      *     otherwise
      */
     public boolean shouldSuppressWarnings(Tree tree, String errKey) {
-        Collection<String> prefixes = getSuppressWarningsPrefixes();
-        if (prefixes.isEmpty()
-                || (prefixes.contains(SUPPRESS_ALL_PREFIX) && prefixes.size() == 1)) {
-            throw new BugInCF(
-                    "Checker must provide a SuppressWarnings prefix."
-                            + " SourceChecker#getSuppressWarningsPrefixes was not overridden"
-                            + " correctly.");
-        }
-
-        if (shouldSuppress(getSuppressWarningsStringsFromOption(), errKey)) {
-            // If the error key matches a warning string in the -AsuppressWarnings, then suppress
-            // the warning.
-            return true;
-        }
-
         assert this.currentRoot != null : "this.currentRoot == null";
         TreePath path = pathToTree(tree);
 
@@ -2830,13 +2832,26 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
      * Returns true if the path is within the scope of a @SuppressWarnings annotation, one of whose
      * values suppresses the checker's warning.
      *
+     * <p>This overload also accounts for source-position-based suppression from unchecked code: if
+     * no matching {@code @SuppressWarnings} is found, then warnings outside a relevant {@link
+     * AnnotatedFor} scope are suppressed when {@code
+     * -AuseConservativeDefaultsForUncheckedCode=source} or {@code -AonlyAnnotatedFor} is in effect.
+     *
      * @param path the TreePath that might be a source of, or related to, a warning
      * @param errKey the error key the checker is emitting
-     * @return true if no warning should be emitted for the given path because it is contained by a
-     *     declaration with an appropriately-valued {@code @SuppressWarnings} annotation; false
+     * @return true if no warning should be emitted for the given path, either because it is
+     *     contained by a declaration with an appropriately-valued {@code @SuppressWarnings}
+     *     annotation, because it is suppressed by command-line arguments, or because it is outside
+     *     an {@link AnnotatedFor} scope when source-based conservative defaults are enabled; false
      *     otherwise
      */
     public boolean shouldSuppressWarnings(TreePath path, String errKey) {
+        if (shouldSuppress(getSuppressWarningsStringsFromOption(), errKey)) {
+            return true;
+        }
+
+        boolean foundAnnotatedFor = false;
+
         // iterate through the path; continue until path contains no declarations
         for (TreePath declPath = TreePathUtil.enclosingDeclarationPath(path);
                 declPath != null;
@@ -2845,41 +2860,36 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
 
             if (decl instanceof VariableTree) {
                 Element elt = TreeUtils.elementFromDeclaration((VariableTree) decl);
-                if (shouldSuppressWarnings(elt, errKey)) {
+                if (hasSuppressWarningsAnnotationForErrorKey(elt, errKey)) {
                     return true;
                 }
             } else if (decl instanceof MethodTree) {
                 Element elt = TreeUtils.elementFromDeclaration((MethodTree) decl);
-                if (shouldSuppressWarnings(elt, errKey)) {
+                if (hasSuppressWarningsAnnotationForErrorKey(elt, errKey)) {
                     return true;
                 }
 
-                if (isAnnotatedForThisCheckerOrUpstreamChecker(elt)) {
-                    // Return false immediately. Do NOT check for AnnotatedFor in the enclosing
-                    // elements as the closest AnnotatedFor is already found.
-                    return false;
+                if (!foundAnnotatedFor && isElementAnnotatedForThisCheckerOrUpstreamChecker(elt)) {
+                    foundAnnotatedFor = true;
                 }
             } else if (TreeUtils.classTreeKinds().contains(decl.getKind())) {
                 // A class tree
                 Element elt = TreeUtils.elementFromDeclaration((ClassTree) decl);
-                if (shouldSuppressWarnings(elt, errKey)) {
+                if (hasSuppressWarningsAnnotationForErrorKey(elt, errKey)) {
                     return true;
                 }
 
-                if (isAnnotatedForThisCheckerOrUpstreamChecker(elt)) {
-                    // Return false immediately. Do NOT check for AnnotatedFor in the enclosing
-                    // elements as the closest AnnotatedFor is already found.
-                    return false;
+                if (!foundAnnotatedFor && isElementAnnotatedForThisCheckerOrUpstreamChecker(elt)) {
+                    foundAnnotatedFor = true;
                 }
                 Element packageElement = elt.getEnclosingElement();
                 if (packageElement != null && packageElement.getKind() == ElementKind.PACKAGE) {
-                    if (shouldSuppressWarnings(packageElement, errKey)) {
+                    if (hasSuppressWarningsAnnotationForErrorKey(packageElement, errKey)) {
                         return true;
                     }
-                    if (isAnnotatedForThisCheckerOrUpstreamChecker(packageElement)) {
-                        // Return false immediately. Do NOT check for AnnotatedFor in the enclosing
-                        // elements as the closest AnnotatedFor is already found.
-                        return false;
+                    if (!foundAnnotatedFor
+                            && isElementAnnotatedForThisCheckerOrUpstreamChecker(packageElement)) {
+                        foundAnnotatedFor = true;
                     }
                 }
             } else {
@@ -2887,7 +2897,9 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
             }
         }
 
-        if (useConservativeDefaultsSource || onlyAnnotatedFor) {
+        if (foundAnnotatedFor) {
+            return false;
+        } else if (useConservativeDefaultsSource || onlyAnnotatedFor) {
             // If we got this far without hitting an @AnnotatedFor and returning
             // false, we DO suppress the warning.
             return true;
@@ -2897,30 +2909,106 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
     }
 
     /**
-     * Should conservative defaults be used for the kind of unchecked code indicated by the
-     * parameter?
+     * Determine whether optimistic defaults should be used for the kind of unchecked code indicated
+     * by the command line arguments.
+     *
+     * @param kindOfCode source or bytecode
+     * @return whether optimistic defaults should be used
+     */
+    public boolean useOptimisticDefault(String kindOfCode) {
+        return useUncheckedDefault("useOptimisticDefaultsForUncheckedCode", kindOfCode, true);
+    }
+
+    /**
+     * Throws a {@link UserError} if a kind of code is to be defaulted both optimistically and
+     * conservatively. The two are opposites, so applying both is always a mistake.
+     */
+    private void checkOptimisticAndConservativeDefaults() {
+        for (String kindOfCode : new String[] {"source", "bytecode"}) {
+            if (useOptimisticDefault(kindOfCode) && useConservativeDefault(kindOfCode)) {
+                throw new UserError(
+                        "Both -AuseOptimisticDefaultsForUncheckedCode and"
+                                + " -AuseConservativeDefaultsForUncheckedCode were supplied for "
+                                + kindOfCode
+                                + "; a kind of code can be defaulted only one way.");
+            }
+        }
+    }
+
+    /**
+     * Determine whether conservative defaults should be used for the kind of unchecked code
+     * indicated by the command line arguments.
      *
      * @param kindOfCode source or bytecode
      * @return whether conservative defaults should be used
      */
     public boolean useConservativeDefault(String kindOfCode) {
-        boolean useUncheckedDefaultsForSource = false;
-        boolean useUncheckedDefaultsForByteCode = false;
-        for (String arg : this.getStringsOption("useConservativeDefaultsForUncheckedCode", ',')) {
-            boolean value = arg.indexOf("-") != 0;
-            arg = value ? arg : arg.substring(1);
+        // Preserve the legacy behavior of ignoring unrecognized conservative-default values.
+        return useUncheckedDefault("useConservativeDefaultsForUncheckedCode", kindOfCode, false);
+    }
+
+    /**
+     * Returns whether an unchecked-code defaulting option enables defaults for a kind of code.
+     *
+     * @param optionName the option to parse
+     * @param kindOfCode source or bytecode
+     * @param validateValues whether to reject malformed and contradictory option values
+     * @return whether the option enables defaults for the kind of code
+     */
+    private boolean useUncheckedDefault(
+            String optionName, String kindOfCode, boolean validateValues) {
+        if (!kindOfCode.equals("source") && !kindOfCode.equals("bytecode")) {
+            throw new UserError("SourceChecker: unexpected kind of code: " + kindOfCode);
+        }
+        if (!hasOption(optionName)) {
+            return false;
+        }
+
+        String optionValue = getOption(optionName);
+        if (optionValue == null) {
+            if (validateValues) {
+                throw new UserError("Option -A" + optionName + " requires a value.");
+            }
+            return false;
+        }
+
+        boolean found = false;
+        boolean result = false;
+        for (String rawArg : optionValue.split(",", -1)) {
+            if (rawArg.isEmpty()) {
+                if (validateValues) {
+                    throw new UserError("Option -A" + optionName + " contains an empty value.");
+                }
+                continue;
+            }
+            boolean value = rawArg.charAt(0) != '-';
+            String arg = value ? rawArg : rawArg.substring(1);
+            if (!arg.equals("source") && !arg.equals("bytecode")) {
+                if (validateValues) {
+                    throw new UserError(
+                            "Invalid value \""
+                                    + rawArg
+                                    + "\" for -A"
+                                    + optionName
+                                    + "; expected source, -source, bytecode, or -bytecode.");
+                }
+                continue;
+            }
             if (arg.equals(kindOfCode)) {
-                return value;
+                if (!found) {
+                    found = true;
+                    result = value;
+                } else if (result != value && validateValues) {
+                    throw new UserError(
+                            "Option -A"
+                                    + optionName
+                                    + " contains conflicting values for "
+                                    + kindOfCode
+                                    + ".");
+                }
             }
         }
-        if (kindOfCode.equals("source")) {
-            return useUncheckedDefaultsForSource;
-        } else if (kindOfCode.equals("bytecode")) {
-            return useUncheckedDefaultsForByteCode;
-        } else {
-            throw new UserError(
-                    "SourceChecker: unexpected argument to useConservativeDefault: " + kindOfCode);
-        }
+        return result;
     }
 
     /**
@@ -2934,10 +3022,17 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
      * true if the element is within the scope of a @SuppressWarnings annotation, one of whose
      * values suppresses all the checker's warnings.
      *
+     * <p>This overload also accounts for source-position-based suppression from unchecked code: if
+     * no matching {@code @SuppressWarnings} is found, then warnings outside a relevant {@link
+     * AnnotatedFor} scope are suppressed when {@code
+     * -AuseConservativeDefaultsForUncheckedCode=source} or {@code -AonlyAnnotatedFor} is in effect.
+     *
      * @param elt the Element that might be a source of, or related to, a warning
      * @param errKey the error key the checker is emitting
-     * @return true if no warning should be emitted for the given Element because it is contained by
-     *     a declaration with an appropriately-valued {@code @SuppressWarnings} annotation; false
+     * @return true if no warning should be emitted for the given Element, either because it is
+     *     contained by a declaration with an appropriately-valued {@code @SuppressWarnings}
+     *     annotation, because it is suppressed by command-line arguments, or because it is outside
+     *     an {@link AnnotatedFor} scope when source-based conservative defaults are enabled; false
      *     otherwise
      */
     public boolean shouldSuppressWarnings(Element elt, String errKey) {
@@ -2945,21 +3040,44 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
             return true;
         }
 
+        boolean foundAnnotatedFor = false;
         for (Element currElt = elt; currElt != null; currElt = currElt.getEnclosingElement()) {
-            SuppressWarnings suppressWarningsAnno = currElt.getAnnotation(SuppressWarnings.class);
-            if (suppressWarningsAnno != null) {
-                String[] suppressWarningsStrings = suppressWarningsAnno.value();
-                if (shouldSuppress(suppressWarningsStrings, errKey)) {
-                    if (warnUnneededSuppressions) {
-                        elementsWithSuppressedWarnings.add(currElt);
-                    }
-                    return true;
-                }
+            if (hasSuppressWarningsAnnotationForErrorKey(currElt, errKey)) {
+                return true;
             }
-            if (isAnnotatedForThisCheckerOrUpstreamChecker(elt)) {
-                // Return false immediately. Do NOT check for AnnotatedFor in the
-                // enclosing elements, because they may not have an @AnnotatedFor.
-                return false;
+            if (!foundAnnotatedFor && isElementAnnotatedForThisCheckerOrUpstreamChecker(currElt)) {
+                foundAnnotatedFor = true;
+            }
+        }
+
+        if (foundAnnotatedFor) {
+            return false;
+        } else if (useConservativeDefaultsSource || onlyAnnotatedFor) {
+            // If we got this far without hitting an @AnnotatedFor and returning
+            // false, we DO suppress the warning.
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Returns true if the given element has a {@code @SuppressWarnings} annotation that suppresses
+     * the given error key.
+     *
+     * @param elt the element whose annotations to check
+     * @param errKey the error key the checker is emitting
+     * @return true if {@code elt} has a corresponding {@code @SuppressWarnings} annotation
+     */
+    private boolean hasSuppressWarningsAnnotationForErrorKey(Element elt, String errKey) {
+        SuppressWarnings suppressWarningsAnno = elt.getAnnotation(SuppressWarnings.class);
+        if (suppressWarningsAnno != null) {
+            String[] suppressWarningsStrings = suppressWarningsAnno.value();
+            if (shouldSuppress(suppressWarningsStrings, errKey)) {
+                if (warnUnneededSuppressions) {
+                    elementsWithSuppressedWarnings.add(elt);
+                }
+                return true;
             }
         }
         return false;
@@ -3084,37 +3202,17 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
     }
 
     /**
-     * Return true if the element has an {@code @AnnotatedFor} annotation, for this checker or an
+     * Returns true if the element has an {@code @AnnotatedFor} annotation for this checker or an
      * upstream checker that called this one.
+     *
+     * <p>This implementation always returns false, which is correct for a checker that does not
+     * type-check, such as an aggregate checker or one of the counting checkers. {@link
+     * org.checkerframework.common.basetype.BaseTypeChecker} overrides it.
      *
      * @param elt the source code element to check, or null
      * @return true if the element is annotated for this checker or an upstream checker
      */
-    private boolean isAnnotatedForThisCheckerOrUpstreamChecker(@Nullable Element elt) {
-        // Return false if elt is null, or if neither useConservativeDefaultsSource nor
-        // issueErrorsForOnlyAnnotatedForScope is set, since the @AnnotatedFor status is irrelevant
-        // in that case.
-        // TODO: Refactor SourceChecker and QualifierDefaults to use a cache for determining if an
-        // element is annotated for.
-        if (elt == null || (!useConservativeDefaultsSource && !onlyAnnotatedFor)) {
-            return false;
-        }
-
-        AnnotatedFor anno = elt.getAnnotation(AnnotatedFor.class);
-
-        String[] userAnnotatedFors = (anno == null ? null : anno.value());
-
-        if (userAnnotatedFors != null) {
-            List<@FullyQualifiedName String> upstreamCheckerNames = getUpstreamCheckerNames();
-
-            for (String userAnnotatedFor : userAnnotatedFors) {
-                if (CheckerMain.matchesCheckerOrSubcheckerFromList(
-                        userAnnotatedFor, upstreamCheckerNames)) {
-                    return true;
-                }
-            }
-        }
-
+    public boolean isElementAnnotatedForThisCheckerOrUpstreamChecker(@Nullable Element elt) {
         return false;
     }
 

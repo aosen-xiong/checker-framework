@@ -1658,10 +1658,12 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
 
     /**
      * Combines two conflicting bound annotations of an intersection type, in the same qualifier
-     * hierarchy, into the single annotation that {@link
-     * AnnotatedTypeMirror.AnnotatedIntersectionType#copyIntersectionBoundAnnotations()} uses to
-     * summarize that hierarchy. This method is called only when two bounds carry different
-     * annotations in one hierarchy.
+     * hierarchy, into the single annotation used to summarize that hierarchy. Called by {@link
+     * AnnotatedTypeMirror.AnnotatedIntersectionType#summarizeBounds()}: for a type variable's own
+     * intersection upper bound, after each bound has been independently defaulted, so a bound's
+     * annotation may be explicit or defaulted; for an intersection cast target, before defaulting,
+     * so only explicit annotations are seen. Either way, this method is called only when two bounds
+     * carry different annotations in one hierarchy.
      *
      * <p>By default the annotation of the bound encountered first, in source order, wins
      * (first-bound-wins): the returned summary equals {@code existingAnnotation} and {@code
@@ -1670,11 +1672,20 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
      * equals one of the bounds' own annotations and the intersection is a subtype of each of its
      * bounds.
      *
-     * <p>A checker that wants an order-independent, more precise summary&mdash;for example a
-     * JSpecify-style integration&mdash;may override this to return {@code
+     * <p>A checker that wants an order-independent, more precise summary -- for example a
+     * JSpecify-style integration -- may override this to return {@code
      * qualifierHierarchy.greatestLowerBoundQualifiersOnly(existingAnnotation, newAnnotation)}. This
      * method decides only how the per-hierarchy summary is computed; that summary is always written
-     * back onto every bound (homogenization).
+     * back onto every bound (homogenization). Computing it via {@code
+     * greatestLowerBoundQualifiersOnly} additionally relies on {@link
+     * QualifierHierarchy#greatestLowerBoundQualifiers} being consistent with {@link
+     * QualifierHierarchy#isSubtypeQualifiers} for the qualifier hierarchy in use (see that method's
+     * documentation): if a qualifier hierarchy's true subtyping relation depends on something a
+     * static declarative lattice cannot express, such as a checker option, and its computation of
+     * the greatest lower bound was not updated to match, the summary this method returns can be a
+     * qualifier the qualifier hierarchy's own subtype check would not itself have derived,
+     * producing a spurious type error where none existed before the summary was combined -- not a
+     * fault of this method or of homogenization, but of that inconsistency.
      *
      * @param existingAnnotation the annotation already chosen for this hierarchy, from an earlier
      *     bound in source order
@@ -3043,14 +3054,17 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
             }
             methodType =
                     (AnnotatedExecutableType)
-                            typeVarSubstitutor.substitute(typeParamToTypeArg, methodType);
+                            typeVarSubstitutor.substitute(
+                                    typeParamToTypeArg,
+                                    methodType,
+                                    typeArguments.typeArgumentsInferred);
         }
 
-        if (typeArguments.inferenceCrash && tree instanceof MethodInvocationTree) {
-            // If inference crashed, then the return type will not be the correct Java type.  This
-            // can cause crashes elsewhere in the framework.  To avoid those crashes, create an ATM
-            // with the correct Java type and default annotations.  (If inference crashes an error
-            // will be issued in the BaseTypeVisitor.)
+        if (typeArguments.needsDefaultedReturnType && tree instanceof MethodInvocationTree) {
+            // If inference did not compute a reliable return type, then the return type will not be
+            // the correct Java type. To avoid crashes elsewhere in the framework, create an ATM
+            // with the correct Java type and default annotations. (An error will be issued in the
+            // BaseTypeVisitor.)
             TypeMirror type = TreeUtils.typeOf(tree);
             AnnotatedTypeMirror returnType = AnnotatedTypeMirror.createType(type, this, false);
             addDefaultAnnotations(returnType);
@@ -3394,7 +3408,9 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
                     "member %s has type %s of kind %s", member, memberType, memberType.getKind());
         }
 
-        stubTypes.injectRecordComponentType(types, member, memberType);
+        if (mergeStubsWithSource || !ElementUtils.isElementFromSourceCode(member)) {
+            stubTypes.injectRecordComponentType(types, member, memberType);
+        }
 
         return memberType;
     }
@@ -3732,15 +3748,20 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
                             con.getTypeVariables());
         }
 
-        con = (AnnotatedExecutableType) typeVarSubstitutor.substitute(typeParamToTypeArg, con);
+        con =
+                (AnnotatedExecutableType)
+                        typeVarSubstitutor.substitute(
+                                typeParamToTypeArg, con, typeArguments.typeArgumentsInferred);
 
-        stubTypes.injectRecordComponentType(types, ctor, con);
+        if (mergeStubsWithSource || !ElementUtils.isElementFromSourceCode(ctor)) {
+            stubTypes.injectRecordComponentType(types, ctor, con);
+        }
 
-        if (typeArguments.inferenceCrash) {
-            // If inference crashed, then the return type will not be the correct Java type.  This
-            // can cause crashes elsewhere in the framework.  To avoid those crashes, create an ATM
-            // with the correct Java type and default annotations.  (If inference crashes an error
-            // will be issued in the BaseTypeVisitor.)
+        if (typeArguments.needsDefaultedReturnType) {
+            // If inference did not compute a reliable return type, then the return type will not be
+            // the correct Java type. To avoid crashes elsewhere in the framework, create an ATM
+            // with the correct Java type and default annotations. (An error will be issued in the
+            // BaseTypeVisitor.)
             TypeMirror typeTM = TreeUtils.typeOf(tree);
             AnnotatedTypeMirror returnType = AnnotatedTypeMirror.createType(typeTM, this, false);
             addDefaultAnnotations(returnType);
@@ -5094,7 +5115,9 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
         }
 
         // Add annotations from annotation files.
-        results.addAll(stubTypes.getDeclAnnotations(elt));
+        if (mergeStubsWithSource || !ElementUtils.isElementFromSourceCode(elt)) {
+            results.addAll(stubTypes.getDeclAnnotations(elt));
+        }
         results.addAll(ajavaTypes.getDeclAnnotations(elt));
         if (currentFileAjavaTypes != null) {
             results.addAll(currentFileAjavaTypes.getDeclAnnotations(elt));

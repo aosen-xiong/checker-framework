@@ -1113,6 +1113,19 @@ public class AnnotationFileParser {
             return null;
         }
 
+        if (warnIfNotFound
+                && fileType.isStub()
+                && fileType != AnnotationFileType.AJAVA_AS_STUB
+                && !mergeStubsWithSource
+                && ElementUtils.isElementFromSourceCode(typeElt)) {
+            warn(
+                    typeDecl,
+                    "stub file provides annotations for source class "
+                            + fqTypeName
+                            + "; either remove the class from the stub file, remove the file from"
+                            + " -Astubs, or pass -AmergeStubsWithSource to merge them");
+        }
+
         List<AnnotatedTypeVariable> typeDeclTypeParameters = null;
         if (typeElt.getKind() == ElementKind.ENUM) {
             if (!(typeDecl instanceof EnumDeclaration)) {
@@ -2324,6 +2337,12 @@ public class AnnotationFileParser {
                 continue;
             }
             ExecutableElement candidate = (ExecutableElement) elt;
+            // Skip private methods: they cannot be overridden, so they cannot be fake override
+            // targets. This mirrors BinaryStubWriter.processCallable, which never writes private
+            // methods.
+            if (candidate.getModifiers().contains(javax.lang.model.element.Modifier.PRIVATE)) {
+                continue;
+            }
             if (!InternalUtils.sameName(
                     candidate.getSimpleName(), methodDecl.getName().getIdentifier())) {
                 continue;

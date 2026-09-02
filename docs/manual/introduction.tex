@@ -641,6 +641,13 @@ More sound (strict) checking: enable errors that are disabled by default
   and Section~\ref{invariant-arrays}.
 \item \<-AcheckEnclosingExpr>
   Enables type checking for enclosing expression types of inner class instantiations.
+\item \<-AuseOptimisticDefaultsForUncheckedCode>
+  Enables optimistic defaults in unchecked code, but does not suppress type-checking warnings.
+  Takes arguments ``source,bytecode''; prefix an argument with ``-'' to disable it.
+  Outside a relevant \refqualclass{framework/qual}{AnnotatedFor} scope, parameters default to
+  top and returns and fields default to bottom.  Upper bounds default to top and lower bounds
+  default to bottom.  See Sections~\ref{defaults-classfile} and~\ref{compiling-libraries}.
+  A kind of code cannot use both optimistic and conservative defaults.
 \item \<-AuseConservativeDefaultsForUncheckedCode>
   Enables conservative defaults, and suppresses all type-checking warnings,
   in unchecked code.  Takes arguments ``source,bytecode''.
@@ -1497,6 +1504,23 @@ or, more generally, as
 
 Then, the specification is more informative, and the Checker Framework is
 able to do more precise checking, than if line 141 has an annotation.
+
+\noindent
+The annotations in \code{MyNullPermittingMultiset} and
+\code{MyNullProhibitingMultiset} are on type arguments of \code{Multiset},
+which is permitted.  By contrast, an annotation immediately before the class
+or interface name in an \code{extends} or \code{implements} clause is a main annotation
+on the supertype.  By default, the Checker Framework reports an
+\code{annotation.on.supertype} error for such an annotation.
+
+The Tainting Checker permits main annotations on supertypes because it
+tracks taintedness when a value of a subclass type is used as a value of a
+supertype.  For example, in
+\code{@Untainted class UntaintedBuffer extends @Untainted Buffer},
+the first \code{@Untainted} is a type-declaration bound of
+\code{UntaintedBuffer}, and the second is the main annotation on
+\code{Buffer}.  The Tainting Checker verifies that the former is a subtype of
+the latter.
 
 It is a pleasant feature of the Checker Framework that in many cases, no
 annotations at all are needed on type parameters such as \code{E} in \<MultiSet>.

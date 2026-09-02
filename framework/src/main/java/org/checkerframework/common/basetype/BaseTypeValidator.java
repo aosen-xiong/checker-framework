@@ -4,6 +4,7 @@ import com.sun.source.tree.AnnotatedTypeTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.ParameterizedTypeTree;
@@ -27,6 +28,7 @@ import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedTypeVari
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedWildcardType;
 import org.checkerframework.framework.type.AnnotatedTypeParameterBounds;
 import org.checkerframework.framework.type.QualifierHierarchy;
+import org.checkerframework.framework.type.TypeHierarchy;
 import org.checkerframework.framework.type.visitor.AnnotatedTypeScanner;
 import org.checkerframework.framework.type.visitor.SimpleAnnotatedTypeScanner;
 import org.checkerframework.framework.util.AnnotatedTypes;
@@ -430,6 +432,12 @@ public class BaseTypeValidator extends AnnotatedTypeScanner<Void, Tree> implemen
         ParameterizedTypeTree typeArgTree = p.first;
         type = p.second;
 
+        // Validate the type arguments of any explicitly-written enclosing types, e.g. the
+        // `Outer<...>` in `Outer<...>.Inner`. The scan below (and super.visitDeclared) only
+        // reaches a type's own direct type arguments; an enclosing type's arguments are buried
+        // in a MemberSelectTree and would otherwise never be checked against their bounds.
+        validateEnclosingTypeArgs(type, tree);
+
         if (typeArgTree == null) {
             return super.visitDeclared(type, tree);
         } // else
@@ -632,6 +640,104 @@ public class BaseTypeValidator extends AnnotatedTypeScanner<Void, Tree> implemen
     }
 
     /**
+     * Validates the type arguments of the explicitly-written enclosing types of a declared type,
+     * for example the {@code Outer<...>} part of a qualified type {@code Outer<...>.Inner}.
+     *
+     * <p>{@link #visitDeclared} and {@link AnnotatedTypeScanner#visitDeclared} only reach a
+     * declared type's own direct type arguments. An enclosing type's type arguments live inside a
+     * {@link MemberSelectTree} and, without this method, are never checked against the enclosing
+     * type parameters' bounds: {@code Outer<@NonNull String>.Inner} would be accepted even when
+     * {@code @NonNull String} violates the bound of {@code Outer}'s type parameter, whereas the
+     * same argument in the non-enclosing position {@code Outer<@NonNull String>} is rejected.
+     *
+     * <p>This method walks the enclosing-type/qualifier chain outward and runs {@link
+     * #visitParameterizedType} on each enclosing type that is written with explicit type arguments
+     * (a {@link ParameterizedTypeTree}). Enclosing types written without type arguments (raw types,
+     * or an inner type named by a simple identifier with the enclosing arguments left implicit)
+     * have no argument tree to check and are skipped, matching the direct-position behavior.
+     *
+     * <p>For most tree shapes, each enclosing type checked is read off {@code type}'s own
+     * enclosing-type chain ({@link AnnotatedDeclaredType#getEnclosingType()}), matching the
+     * qualifier chain in the tree level for level. The exception is an unqualified class instance
+     * creation (e.g. {@code new Outer<...>.Inner()}): there, {@code type}'s enclosing type is the
+     * *receiver* used to viewpoint-adapt the constructor invocation (see {@link
+     * AnnotatedTypeFactory#getConstructorReceiverType}), which need not be, and need not carry the
+     * annotations of, the type actually written in the {@code new} expression. In that case, every
+     * enclosing type checked is instead derived directly from its own written tree via {@link
+     * AnnotatedTypeFactory#getAnnotatedTypeFromTypeTree}.
+     *
+     * @param type the declared type whose enclosing types should be validated
+     * @param tree the tree for {@code type}; besides a type-use tree, this may also be a {@link
+     *     MethodTree} (return type validation, see {@link BaseTypeVisitor#validateTypeOf}) or a
+     *     {@link NewClassTree} (the instantiated type), matching what {@link
+     *     #extractParameterizedTypeTree} accepts
+     */
+    protected void validateEnclosingTypeArgs(AnnotatedDeclaredType type, Tree tree) {
+        if (type.getEnclosingType() == null) {
+            return;
+        }
+
+        // An unqualified `new Outer<...>.Inner()` has no enclosing expression to supply a receiver
+        // for viewpoint adaptation; `type`'s enclosing type is then some other applicable receiver
+        // (e.g. the type of an enclosing `this`), not the type written in the `new` expression.
+        boolean unqualifiedNewClass =
+                tree instanceof NewClassTree
+                        && ((NewClassTree) tree).getEnclosingExpression() == null;
+
+        // Unwrap the type tree down to the tree that actually names the type: strip a surrounding
+        // VariableTree or AnnotatedTypeTree, unwrap a MethodTree to its return type or a
+        // NewClassTree to its instantiated type, then drop a top-level ParameterizedTypeTree's own
+        // type arguments to reach the (possibly qualified) name.
+        Tree nameTree = tree;
+        while (true) {
+            if (nameTree instanceof VariableTree) {
+                nameTree = ((VariableTree) nameTree).getType();
+            } else if (nameTree instanceof AnnotatedTypeTree) {
+                nameTree = ((AnnotatedTypeTree) nameTree).getUnderlyingType();
+            } else if (nameTree instanceof MethodTree) {
+                // A constructor has no written return type to unwrap further.
+                nameTree = ((MethodTree) nameTree).getReturnType();
+                if (nameTree == null) {
+                    return;
+                }
+            } else if (nameTree instanceof NewClassTree) {
+                nameTree = ((NewClassTree) nameTree).getIdentifier();
+            } else {
+                break;
+            }
+        }
+        if (nameTree instanceof ParameterizedTypeTree) {
+            nameTree = ((ParameterizedTypeTree) nameTree).getType();
+        }
+
+        // Walk outward through the qualifier chain, validating each enclosing type that is written
+        // with explicit type arguments.
+        AnnotatedDeclaredType enclosing = unqualifiedNewClass ? null : type.getEnclosingType();
+        while (nameTree instanceof MemberSelectTree) {
+            ExpressionTree enclosingTree = ((MemberSelectTree) nameTree).getExpression();
+            if (enclosingTree instanceof ParameterizedTypeTree) {
+                ParameterizedTypeTree enclosingParamTree = (ParameterizedTypeTree) enclosingTree;
+                AnnotatedDeclaredType enclosingType =
+                        unqualifiedNewClass
+                                ? (AnnotatedDeclaredType)
+                                        atypeFactory.getAnnotatedTypeFromTypeTree(
+                                                enclosingParamTree)
+                                : enclosing;
+                if (enclosingType != null) {
+                    visitParameterizedType(enclosingType, enclosingParamTree);
+                }
+                nameTree = enclosingParamTree.getType();
+            } else {
+                // A raw or simple-name enclosing type has no argument tree to validate.
+                nameTree = enclosingTree;
+            }
+            if (!unqualifiedNewClass) {
+                enclosing = enclosing == null ? null : enclosing.getEnclosingType();
+            }
+        }
+    }
+
+    /**
      * Checks that the annotations on the type arguments supplied to a type or a method invocation
      * are within the bounds of the type variables as declared, and issues the
      * "type.argument.type.incompatible" error if they are not.
@@ -797,14 +903,8 @@ public class BaseTypeValidator extends AnnotatedTypeScanner<Void, Tree> implemen
                 // For example, Set<@1 ? super @2 Object> will collapse into Set<@2 Object>.
                 // So, issue a warning if the annotations on the extends bound are not the
                 // same as the annotations on the super bound.
-                if (!(atypeFactory
-                                .getTypeHierarchy()
-                                .isSubtypeShallowEffective(
-                                        wildcard.getSuperBound(), wildcard.getExtendsBound())
-                        && atypeFactory
-                                .getTypeHierarchy()
-                                .isSubtypeShallowEffective(
-                                        wildcard.getExtendsBound(), wildcard.getSuperBound()))) {
+                if (!areCollapsedWildcardBoundsEqual(
+                        wildcard.getExtendsBound(), wildcard.getSuperBound())) {
                     checker.reportError(
                             tree.getTypeArguments().get(i),
                             "type.invalid.super.wildcard",
@@ -813,6 +913,34 @@ public class BaseTypeValidator extends AnnotatedTypeScanner<Void, Tree> implemen
                 }
             }
         }
+    }
+
+    /**
+     * Returns true if, for the purposes of the JDK-8054309 collapsed-wildcard check in {@link
+     * #checkExplicitSuperBoundWildcards}, {@code extendsBound} and {@code superBound} count as the
+     * same bound.
+     *
+     * <p>The default implementation tests this via a bidirectional {@code
+     * isSubtypeShallowEffective} check, i.e. "each is a subtype of the other". That is a correct
+     * test for "same qualifier" only in an antisymmetric qualifier hierarchy, which is the case for
+     * all of CF's own type systems.
+     *
+     * <p>A checker whose qualifier hierarchy is not antisymmetric -- for example, one with an
+     * "unspecified" qualifier that is (by design) mutually a subtype of every other qualifier, so
+     * that it is compatible in both directions during subtype checks -- must override this method
+     * to compare the bounds directly (e.g. by comparing their effective annotation sets for
+     * equality) rather than relying on mutual subtyping, since mutual subtyping no longer implies
+     * equality in such a hierarchy.
+     *
+     * @param extendsBound the extends bound of the wildcard
+     * @param superBound the super bound of the wildcard
+     * @return true if the two bounds should be treated as equal for this check
+     */
+    protected boolean areCollapsedWildcardBoundsEqual(
+            AnnotatedTypeMirror extendsBound, AnnotatedTypeMirror superBound) {
+        TypeHierarchy typeHierarchy = atypeFactory.getTypeHierarchy();
+        return typeHierarchy.isSubtypeShallowEffective(superBound, extendsBound)
+                && typeHierarchy.isSubtypeShallowEffective(extendsBound, superBound);
     }
 
     @Override
