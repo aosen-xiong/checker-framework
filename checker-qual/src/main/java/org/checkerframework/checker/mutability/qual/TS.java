@@ -9,7 +9,8 @@ import java.lang.annotation.Target;
 /**
  * Transitive-state mode: the {@link RS} and {@link CS} rule changes together.
  *
- * <p>The method preserves every field reachable from its receiver and arguments. Like {@link RS}, the guarantee requires a signature, bounds included, that mentions no {@code @Mutable}.
+ * <p>The method preserves every field reachable from its receiver and arguments. Like {@link RS},
+ * the guarantee requires a signature, bounds included, that mentions no {@code @Mutable}.
  *
  * <p>A method has at most one mode annotation. A method without one is checked in {@link AS}. A
  * method may call methods of its own mode or a stronger one: {@link TS} is the strongest, {@link

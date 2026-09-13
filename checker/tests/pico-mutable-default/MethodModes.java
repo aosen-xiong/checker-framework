@@ -7,14 +7,20 @@ import org.checkerframework.checker.mutability.qual.TS;
 class MethodModes {
     void unannotated() {}
 
-    @AS void abstractState() {}
+    @AS
+    void abstractState() {}
 
-    @CS void concreteState() {}
+    @CS
+    void concreteState() {}
 
-    @RS void readonlyState() {}
+    @RS
+    void readonlyState() {}
 
-    @TS void transitiveState() {}
+    @TS
+    void transitiveState() {}
 
     // :: error: (method.mode.multiple)
-    @AS @RS void twoModes() {}
+    @AS
+    @RS
+    void twoModes() {}
 }

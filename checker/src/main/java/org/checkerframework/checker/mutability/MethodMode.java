@@ -16,7 +16,10 @@ public enum MethodMode {
     AS(AS.class),
     /** Concrete state: {@code @Assignable} fields are writable only through {@code @Mutable}. */
     CS(CS.class),
-    /** Readonly state: a {@code @Mutable} member read through a non-{@code @Mutable} receiver is lost. */
+    /**
+     * Readonly state: a {@code @Mutable} member read through a non-{@code @Mutable} receiver is
+     * lost.
+     */
     RS(RS.class),
     /** Transitive state: the {@link #CS} and {@link #RS} rule changes together. */
     TS(TS.class);

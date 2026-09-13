@@ -12,19 +12,16 @@ import org.checkerframework.checker.mutability.qual.Mutable;
 import org.checkerframework.checker.mutability.qual.Readonly;
 import org.checkerframework.checker.mutability.qual.ReceiverDependentMutable;
 
-@ReceiverDependentMutable
-interface StaticRdmExtendsClause<T extends @Readonly Object> {
+@ReceiverDependentMutable interface StaticRdmExtendsClause<T extends @Readonly Object> {
 
     // nested + @ReceiverDependentMutable + extends an RDM type
-    @ReceiverDependentMutable
-    interface OfPrim<T extends @Readonly Object, S extends StaticRdmExtendsClause.OfPrim<T, S>>
+    @ReceiverDependentMutable interface OfPrim<T extends @Readonly Object, S extends StaticRdmExtendsClause.OfPrim<T, S>>
             extends StaticRdmExtendsClause<T> {
         S trySplit(@Mutable OfPrim<T, S> this);
     }
 
     // and a further nesting level, extending the nested RDM interface
-    @ReceiverDependentMutable
-    interface OfInt extends OfPrim<Integer, OfInt> {
+    @ReceiverDependentMutable interface OfInt extends OfPrim<Integer, OfInt> {
         @Override
         OfInt trySplit(@Mutable OfInt this);
     }

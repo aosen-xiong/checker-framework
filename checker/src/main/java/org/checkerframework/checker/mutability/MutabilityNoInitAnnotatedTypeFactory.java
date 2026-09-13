@@ -115,8 +115,8 @@ public class MutabilityNoInitAnnotatedTypeFactory
 
     /**
      * The modes of the trees currently being typed, innermost first. Every entry point that can
-     * viewpoint-adapt a member pushes the mode of the tree it was given, so adaptation reads the mode
-     * of the method whose body contains that tree.
+     * viewpoint-adapt a member pushes the mode of the tree it was given, so adaptation reads the
+     * mode of the method whose body contains that tree.
      */
     private final Deque<MethodMode> methodModeStack = new ArrayDeque<>();
 
@@ -213,8 +213,8 @@ public class MutabilityNoInitAnnotatedTypeFactory
     }
 
     /**
-     * Returns the mode annotations written on {@code method}, in {@link MethodMode} order. A well-formed
-     * method has at most one.
+     * Returns the mode annotations written on {@code method}, in {@link MethodMode} order. A
+     * well-formed method has at most one.
      *
      * @param method a method
      * @return the modes declared on {@code method}; empty if none
@@ -244,8 +244,8 @@ public class MutabilityNoInitAnnotatedTypeFactory
 
     /**
      * Returns the mode of the method whose body contains {@code tree}. Lambda bodies take the mode
-     * of their enclosing method. A tree outside any method, such as a field initializer, or a tree in
-     * a class nested inside a method but outside that class's own methods, is in {@link
+     * of their enclosing method. A tree outside any method, such as a field initializer, or a tree
+     * in a class nested inside a method but outside that class's own methods, is in {@link
      * MethodMode#AS}.
      *
      * @param tree a tree in the current compilation unit

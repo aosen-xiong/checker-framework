@@ -419,10 +419,10 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
     /**
      * {@inheritDoc}
      *
-     * <p>A method cannot be invoked when its adapted receiver type contains {@code
-     * @MutabilityLost}. Receiver adaptation is uniform, so a {@code @MutabilityLost} call site adapts
-     * a {@code @ReceiverDependentMutable} receiver to {@code @MutabilityLost}; this check, like the
-     * one for parameters, is what rejects the call.
+     * <p>A method cannot be invoked when its adapted receiver type contains
+     * {@code @MutabilityLost}. Receiver adaptation is uniform, so a {@code @MutabilityLost} call
+     * site adapts a {@code @ReceiverDependentMutable} receiver to {@code @MutabilityLost}; this
+     * check, like the one for parameters, is what rejects the call.
      */
     @Override
     protected void checkMethodInvocability(

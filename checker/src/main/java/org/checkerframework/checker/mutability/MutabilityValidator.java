@@ -144,9 +144,8 @@ public class MutabilityValidator extends BaseTypeValidator {
      *
      * <p>Such a clause names a class BOUND, not a type use that needs a receiver, so
      * {@code @ReceiverDependentMutable} is legal there even though a nested class or interface is
-     * implicitly static. {@code java.util.Spliterator.OfPrimitive} and
-     * {@code Spliterator.OfInt} are the motivating cases; see
-     * {@code tests/pico-mutable-default/StaticRdmExtendsClause.java}.
+     * implicitly static. {@code java.util.Spliterator.OfPrimitive} and {@code Spliterator.OfInt}
+     * are the motivating cases; see {@code tests/pico-mutable-default/StaticRdmExtendsClause.java}.
      *
      * @param tree the tree being validated
      * @return true if {@code tree} is an extends or implements clause of the enclosing class

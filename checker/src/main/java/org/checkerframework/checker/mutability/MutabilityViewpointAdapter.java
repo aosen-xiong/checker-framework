@@ -65,7 +65,8 @@ public class MutabilityViewpointAdapter extends AbstractViewpointAdapter {
         }
 
         // In RS and TS, a declared @Mutable member stays @Mutable only through a @Mutable receiver
-        // and is lost through every other one, so a call that starts with no mutable reference cannot
+        // and is lost through every other one, so a call that starts with no mutable reference
+        // cannot
         // obtain one. AS and CS keep the ordinary rule, and receiver positions are never scoped.
         if (!adaptingReceiver
                 && AnnotationUtils.areSame(declaredAnnotation, mutabilityTypeFactory.MUTABLE)
@@ -110,13 +111,14 @@ public class MutabilityViewpointAdapter extends AbstractViewpointAdapter {
      * <p>Losing the mutability is correct for a field or a return type: reading receiver-dependent
      * state through a readonly reference genuinely loses the precise mutability. It is wrong for a
      * receiver. A receiver-dependent method imposes no requirement of its own on the receiver — it
-     * adapts to whatever the caller has — so adapting its declared receiver to {@code @MutabilityLost}
-     * makes every such method uncallable on a {@code @Readonly} reference, and rules out ordinary
-     * read-only uses like passing a collection to a method that only iterates it.
+     * adapts to whatever the caller has — so adapting its declared receiver to
+     * {@code @MutabilityLost} makes every such method uncallable on a {@code @Readonly} reference,
+     * and rules out ordinary read-only uses like passing a collection to a method that only
+     * iterates it.
      *
-     * <p>The rule is uniform: a {@code @MutabilityLost} call site adapts the receiver to {@code
-     * @MutabilityLost}. Such a call is rejected by {@code MutabilityNoInitVisitor}, because the
-     * adapted receiver type contains {@code @MutabilityLost}, not by adaptation.
+     * <p>The rule is uniform: a {@code @MutabilityLost} call site adapts the receiver to
+     * {@code @MutabilityLost}. Such a call is rejected by {@code MutabilityNoInitVisitor}, because
+     * the adapted receiver type contains {@code @MutabilityLost}, not by adaptation.
      */
     @Override
     protected AnnotatedTypeMirror combineTypeWithReceiverType(
