@@ -68,6 +68,8 @@ public class MutabilityViewpointAdapter extends AbstractViewpointAdapter {
         // and is lost through every other one, so a call that starts with no mutable reference
         // cannot
         // obtain one. AS and CS keep the ordinary rule, and receiver positions are never scoped.
+        // This must come after the @ReceiverDependentMutable branch above, as in the model's
+        // scopedVpa: an @RDM declaration adapts the ordinary way in every mode.
         if (!adaptingReceiver
                 && AnnotationUtils.areSame(declaredAnnotation, mutabilityTypeFactory.MUTABLE)
                 && !AnnotationUtils.areSame(receiverAnnotation, mutabilityTypeFactory.MUTABLE)

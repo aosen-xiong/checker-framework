@@ -79,6 +79,32 @@ class MethodModeReadonlyState {
         @Mutable ModeRep r = s.getAlias();
     }
 
+    // Parameters declared in different methods get receiver types that hash differently, so the
+    // two calls above do not share a method-type cache entry. Calls on the same field do.
+    @Readonly ModeStore store;
+
+    @AS
+    void fieldReturnAS() {
+        @Mutable ModeRep r = store.getAlias();
+    }
+
+    @RS
+    void fieldReturnAfterAS() {
+        // :: error: (assignment.type.incompatible)
+        @Mutable ModeRep r = store.getAlias();
+    }
+
+    @RS
+    void fieldReturnBeforeAS() {
+        // :: error: (assignment.type.incompatible)
+        @Mutable ModeRep r = store.getAlias();
+    }
+
+    @AS
+    void fieldReturnAfterRS() {
+        @Mutable ModeRep r = store.getAlias();
+    }
+
     @RS
     void receiverNotScoped(@Mutable ModeRep r) {
         // The declared @Mutable receiver of clear() is not lost through a @Mutable call site.
