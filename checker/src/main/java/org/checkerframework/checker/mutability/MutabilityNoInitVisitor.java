@@ -562,6 +562,11 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
     /**
      * Returns whether the receiver type permits writing to the selected field or array.
      *
+     * <p>A {@code @Mutable} receiver permits every write. Through any other receiver, only an
+     * {@code @Assignable} field is writable, and not at all inside a concrete-state or
+     * transitive-state method body, where an instance field is writable only through a
+     * {@code @Mutable} receiver. Static fields are not affected by the method mode.
+     *
      * @param receiverType the receiver type
      * @param variable the variable in the assignment
      * @return true if the receiver type allows writing, false otherwise
@@ -569,7 +574,14 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
     private boolean allowWrite(AnnotatedTypeMirror receiverType, ExpressionTree variable) {
         if (receiverType.hasAnnotation(atypeFactory.MUTABLE)) {
             return true;
-        } else return atypeFactory.isAssigningAssignableField(variable);
+        }
+        if (!atypeFactory.isAssigningAssignableField(variable)) {
+            return false;
+        }
+        VariableElement field = TreeUtils.asFieldAccess(variable);
+        return field == null
+                || ElementUtils.isStatic(field)
+                || !atypeFactory.getMethodModeOf(variable).restrictsAssignability();
     }
 
     /**

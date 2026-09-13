@@ -49,6 +49,17 @@ public enum MethodMode {
     }
 
     /**
+     * Returns true if this mode restricts field assignability. In {@link #CONCRETE_STATE} and
+     * {@link #TRANSITIVE_STATE}, an instance field, including an {@code @Assignable} one, is
+     * writable only through a {@code @Mutable} receiver.
+     *
+     * @return true for {@link #CONCRETE_STATE} and {@link #TRANSITIVE_STATE}
+     */
+    public boolean restrictsAssignability() {
+        return this == CONCRETE_STATE || this == TRANSITIVE_STATE;
+    }
+
+    /**
      * Returns the annotation that selects this mode, as written in source, for diagnostics.
      *
      * @return the annotation that selects this mode, such as {@code @ReadonlyState}
