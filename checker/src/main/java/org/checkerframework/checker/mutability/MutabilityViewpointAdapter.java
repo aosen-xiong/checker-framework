@@ -44,7 +44,7 @@ public class MutabilityViewpointAdapter extends AbstractViewpointAdapter {
 
     @Override
     protected AnnotationMirror extractAnnotationMirror(AnnotationMirrorSet annotations) {
-        return atypeFactory
+        return mutabilityTypeFactory
                 .getQualifierHierarchy()
                 .findAnnotationInHierarchy(annotations, mutabilityTypeFactory.READONLY);
     }
