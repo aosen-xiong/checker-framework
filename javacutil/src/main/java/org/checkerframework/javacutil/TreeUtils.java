@@ -15,6 +15,7 @@ import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.InstanceOfTree;
+import com.sun.source.tree.IntersectionTypeTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.LambdaExpressionTree.BodyKind;
 import com.sun.source.tree.LiteralTree;
@@ -1237,16 +1238,36 @@ public final class TreeUtils {
     }
 
     /**
-     * Is the given tree a type instantiation?
+     * Does the given tree denote a type, rather than an expression or a declaration?
      *
-     * <p>TODO: this is an under-approximation: e.g. an identifier could be either a type use or an
-     * expression. How can we distinguish.
+     * <p>Every kind in {@link #typeTreeKinds} can only be a type, so it is recognized by its kind
+     * alone. An identifier cannot be: it is a type use in {@code class C extends Base {}} or {@code
+     * T x} but an expression in {@code base = null}. This method resolves that ambiguity by asking
+     * what the identifier refers to, so it requires an attributed tree.
+     *
+     * <p>A member select is ambiguous in the same way: {@code Outer.Inner} is a type in {@code
+     * Outer.Inner x} but an expression in {@code obj.field = 1}, and it is resolved the same way. A
+     * member select that names a package, as in the {@code java.util} within {@code
+     * java.util.List}, refers to a package rather than a type and so is not a type tree.
      *
      * @param tree the tree to test
-     * @return true, iff the given tree is a type
+     * @return true iff the given tree denotes a type
      */
     public static boolean isTypeTree(Tree tree) {
-        return typeTreeKinds().contains(tree.getKind());
+        if (typeTreeKinds().contains(tree.getKind())) {
+            return true;
+        }
+        switch (tree.getKind()) {
+            case IDENTIFIER:
+            case MEMBER_SELECT:
+                Element elt = elementFromTree(tree);
+                // An identifier or member select denotes a type if it resolves to a type
+                // declaration: a class/interface/enum/record/annotation or a type variable
+                // (as in a use like `T x`).
+                return elt != null && ElementUtils.isTypeDeclaration(elt);
+            default:
+                return false;
+        }
     }
 
     /**
@@ -2430,11 +2451,32 @@ public final class TreeUtils {
                 case UNION_TYPE:
                     List<? extends Tree> alternatives =
                             ((UnionTypeTree) typeTree).getTypeAlternatives();
-                    List<AnnotationTree> result = new ArrayList<>(alternatives.size());
-                    for (Tree alternative : alternatives) {
-                        result.addAll(getExplicitAnnotationTrees(null, alternative));
+                    List<AnnotationTree> unionResult = new ArrayList<>(alternatives.size());
+                    // Only the first alternative gets annoTrees. In a multi-catch, javac attaches
+                    // an annotation written before the first alternative to the catch parameter's
+                    // modifiers -- which is what annoTrees holds -- and leaves that alternative a
+                    // bare identifier, so passing null here would drop it. An annotation on any
+                    // later alternative stays on that alternative's own tree, which arrives here
+                    // as an ANNOTATED_TYPE and needs nothing from annoTrees; passing annoTrees to
+                    // it as well would report the first alternative's annotation once per
+                    // alternative.
+                    for (int i = 0; i < alternatives.size(); i++) {
+                        unionResult.addAll(
+                                getExplicitAnnotationTrees(
+                                        i == 0 ? annoTrees : null, alternatives.get(i)));
                     }
-                    return result;
+                    return unionResult;
+                case INTERSECTION_TYPE:
+                    // Only reachable from a cast, as in "(@Nullable Supplier<String> &
+                    // Serializable) ...": a type parameter's bound never reaches this method
+                    // (TYPE_PARAMETER returns above), and no declaration can have an
+                    // intersection type.
+                    List<? extends Tree> bounds = ((IntersectionTypeTree) typeTree).getBounds();
+                    List<AnnotationTree> intersectionResult = new ArrayList<>(bounds.size());
+                    for (Tree bound : bounds) {
+                        intersectionResult.addAll(getExplicitAnnotationTrees(null, bound));
+                    }
+                    return intersectionResult;
                 default:
                     throw new BugInCF(
                             "TreeUtils.getExplicitAnnotationTrees: what typeTree? %s %s %s",
@@ -3045,21 +3087,53 @@ public final class TreeUtils {
     }
 
     /**
-     * Returns true if the given method invocation is an invocation of a method with a vararg
-     * parameter, and the invocation has zero vararg actuals.
+     * Returns true if the given invocation tree is an invocation of a method or constructor with a
+     * varargs parameter, and the invocation has zero varargs actual arguments.
+     *
+     * @param tree a method invocation or constructor invocation tree
+     * @return true if the given invocation has zero varargs actual arguments
+     * @see #isCallToVarargsMethodWithZeroVarargsActuals(MethodInvocationTree)
+     * @see #isCallToVarargsMethodWithZeroVarargsActuals(NewClassTree)
+     */
+    public static boolean isCallToVarargsMethodWithZeroVarargsActuals(Tree tree) {
+        switch (tree.getKind()) {
+            case METHOD_INVOCATION:
+                return isCallToVarargsMethodWithZeroVarargsActuals((MethodInvocationTree) tree);
+            case NEW_CLASS:
+                return isCallToVarargsMethodWithZeroVarargsActuals((NewClassTree) tree);
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Returns true if the given method invocation is an invocation of a method with a varargs
+     * parameter, and the invocation has zero varargs actual arguments.
      *
      * @param invok the method invocation
-     * @return true if the given method invocation is an invocation of a method with a vararg
-     *     parameter, and the invocation has with zero vararg actuals
+     * @return true if the given method invocation has zero varargs actual arguments
      */
     public static boolean isCallToVarargsMethodWithZeroVarargsActuals(MethodInvocationTree invok) {
-        if (!TreeUtils.isVarArgs(invok)) {
+        if (!isVarargsCall(invok)) {
             return false;
         }
         int numParams = elementFromUse(invok).getParameters().size();
-        // The comparison of the number of arguments to the number of formals (minus one) checks
-        // whether there are no varargs actuals.
         return invok.getArguments().size() == numParams - 1;
+    }
+
+    /**
+     * Returns true if the given constructor invocation is an invocation of a constructor with a
+     * varargs parameter, and the invocation has zero varargs actual arguments.
+     *
+     * @param newClassTree the constructor invocation
+     * @return true if the given constructor invocation has zero varargs actual arguments
+     */
+    public static boolean isCallToVarargsMethodWithZeroVarargsActuals(NewClassTree newClassTree) {
+        if (!isVarargsCall(newClassTree)) {
+            return false;
+        }
+        int numParams = elementFromUse(newClassTree).getParameters().size();
+        return newClassTree.getArguments().size() == numParams - 1;
     }
 
     /**

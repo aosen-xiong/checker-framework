@@ -122,7 +122,6 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
-import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.type.TypeVariable;
@@ -636,6 +635,16 @@ public abstract class GenericAnnotatedTypeFactory<
         return new DefaultQualifierForUseTypeAnnotator(this);
     }
 
+    @Override
+    protected AnnotationMirrorSet getDefaultAnnosForUses(Element element) {
+        // The annotator is created in postInit, so it is null while the type factory is still
+        // being constructed; a type queried that early has no default-for-use qualifiers yet.
+        if (defaultQualifierForUseTypeAnnotator != null) {
+            return defaultQualifierForUseTypeAnnotator.getDefaultAnnosForUses(element);
+        }
+        return AnnotationMirrorSet.emptySet();
+    }
+
     /**
      * Creates an {@link DefaultForTypeAnnotator}.
      *
@@ -934,18 +943,6 @@ public abstract class GenericAnnotatedTypeFactory<
     // **********************************************************************
     // Factory Methods for the appropriate annotator classes
     // **********************************************************************
-
-    @Override
-    protected void postDirectSuperTypes(
-            AnnotatedTypeMirror type, List<? extends AnnotatedTypeMirror> supertypes) {
-        super.postDirectSuperTypes(type, supertypes);
-        if (type.getKind() == TypeKind.DECLARED) {
-            for (AnnotatedTypeMirror supertype : supertypes) {
-                Element elt = ((DeclaredType) supertype.getUnderlyingType()).asElement();
-                addComputedTypeAnnotations(elt, supertype);
-            }
-        }
-    }
 
     /**
      * Returns the primary annotation with {@code clazz} on {@code expression}'s type, at a

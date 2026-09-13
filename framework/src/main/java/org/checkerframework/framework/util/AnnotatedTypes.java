@@ -1031,8 +1031,20 @@ public class AnnotatedTypes {
             QualifierHierarchy qualHierarchy,
             AnnotatedTypeMirror subtype,
             AnnotatedTypeMirror supertype) {
-        AnnotatedTypeMirror glb = subtype.deepCopy();
-        glb.clearAnnotations();
+        // glb's own primary annotations are recomputed per hierarchy below, so start from a copy
+        // of subtype that has none. For a type variable or wildcard, use shallowCopy(false): a
+        // deep copy (they can't be shallow-copied; see their shallowCopy Javadoc) whose primary
+        // annotation set alone is cleared. Plain clearAnnotations() would clear the bounds too
+        // (recursively, at any nesting depth), but the loop below overwrites a bound only in a
+        // hierarchy that needs restricting; every other hierarchy is meant to keep subtype's own
+        // bound annotations exactly as they were, which shallowCopy(false) preserves for free.
+        AnnotatedTypeMirror glb;
+        if (subtype.getKind() == TypeKind.TYPEVAR || subtype.getKind() == TypeKind.WILDCARD) {
+            glb = subtype.shallowCopy(false);
+        } else {
+            glb = subtype.deepCopy();
+            glb.clearAnnotations();
+        }
 
         TypeMirror subTM = subtype.getUnderlyingType();
         TypeMirror superTM = supertype.getUnderlyingType();
@@ -1737,7 +1749,10 @@ public class AnnotatedTypes {
      * Copies explicit annotations and annotations resulting from resolution of polymorphic
      * qualifiers from {@code constructor} to {@code returnType}. If {@code returnType} has an
      * annotation in the same hierarchy of an annotation to be copied, that annotation is not
-     * copied.
+     * copied. An annotation written on the constructor as an alias is recognized as explicit the
+     * same way its canonical form would be, though what is actually copied is the (already
+     * canonicalized) annotation from {@code constructorType}'s own return type, not the alias
+     * itself.
      *
      * @param atypeFactory type factory
      * @param returnType return type to copy annotations to
@@ -1775,9 +1790,14 @@ public class AnnotatedTypes {
             }
             if (atypeFactory.isSupportedQualifier(cta)) {
                 for (AnnotationMirror fromDecl : decret) {
-                    if (atypeFactory.isSupportedQualifier(fromDecl)
+                    // fromDecl comes from getRawTypeAttributes(), not from addAnnotation, so it
+                    // is as written and may be an alias; getTopAnnotation requires an already
+                    // supported qualifier, so resolve fromDecl before calling it.
+                    AnnotationMirror supportedFromDecl =
+                            atypeFactory.asSupportedQualifier(fromDecl);
+                    if (supportedFromDecl != null
                             && AnnotationUtils.areSame(
-                                    ctatop, qualHierarchy.getTopAnnotation(fromDecl))) {
+                                    ctatop, qualHierarchy.getTopAnnotation(supportedFromDecl))) {
                         returnType.addAnnotation(cta);
                         break;
                     }
