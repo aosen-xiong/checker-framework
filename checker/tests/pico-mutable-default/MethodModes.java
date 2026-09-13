@@ -19,8 +19,8 @@ class MethodModes {
     @TS
     void transitiveState() {}
 
-    // :: error: (method.mode.multiple)
     @AS
     @RS
+    // :: error: (method.mode.multiple)
     void twoModes() {}
 }
