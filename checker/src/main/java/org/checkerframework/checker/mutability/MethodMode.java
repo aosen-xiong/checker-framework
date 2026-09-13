@@ -1,28 +1,29 @@
 package org.checkerframework.checker.mutability;
 
-import org.checkerframework.checker.mutability.qual.AS;
-import org.checkerframework.checker.mutability.qual.CS;
-import org.checkerframework.checker.mutability.qual.RS;
-import org.checkerframework.checker.mutability.qual.TS;
+import org.checkerframework.checker.mutability.qual.AbstractState;
+import org.checkerframework.checker.mutability.qual.ConcreteState;
+import org.checkerframework.checker.mutability.qual.ReadonlyState;
+import org.checkerframework.checker.mutability.qual.TransitiveState;
 
 import java.lang.annotation.Annotation;
 
 /**
- * The mode a method body is checked in. A method declares its mode with one of {@link AS}, {@link
- * CS}, {@link RS}, or {@link TS}, and a method without one is checked in {@link #AS}.
+ * The mode a method body is checked in. A method declares its mode with one of {@link
+ * AbstractState}, {@link ConcreteState}, {@link ReadonlyState}, or {@link TransitiveState}, and a
+ * method without one is checked in {@link #ABSTRACT_STATE}.
  */
 public enum MethodMode {
     /** Abstract state: the ordinary viewpoint adaptation and assignability rules. */
-    AS(AS.class),
+    ABSTRACT_STATE(AbstractState.class),
     /** Concrete state: {@code @Assignable} fields are writable only through {@code @Mutable}. */
-    CS(CS.class),
+    CONCRETE_STATE(ConcreteState.class),
     /**
      * Readonly state: a {@code @Mutable} member read through a non-{@code @Mutable} receiver is
      * lost.
      */
-    RS(RS.class),
-    /** Transitive state: the {@link #CS} and {@link #RS} rule changes together. */
-    TS(TS.class);
+    READONLY_STATE(ReadonlyState.class),
+    /** Transitive state: the {@link #CONCRETE_STATE} and {@link #READONLY_STATE} rules together. */
+    TRANSITIVE_STATE(TransitiveState.class);
 
     /** The declaration annotation that selects this mode. */
     public final Class<? extends Annotation> annotation;
@@ -37,12 +38,23 @@ public enum MethodMode {
     }
 
     /**
-     * Returns true if this mode changes value viewpoint adaptation. {@link #AS} and {@link #CS}
-     * share the ordinary value adaptation; {@link #RS} and {@link #TS} do not.
+     * Returns true if this mode changes value viewpoint adaptation. {@link #ABSTRACT_STATE} and
+     * {@link #CONCRETE_STATE} share the ordinary value adaptation, {@link #READONLY_STATE} and
+     * {@link #TRANSITIVE_STATE} do not.
      *
-     * @return true for {@link #RS} and {@link #TS}
+     * @return true for {@link #READONLY_STATE} and {@link #TRANSITIVE_STATE}
      */
     public boolean changesValueAdaptation() {
-        return this == RS || this == TS;
+        return this == READONLY_STATE || this == TRANSITIVE_STATE;
+    }
+
+    /**
+     * Returns the annotation that selects this mode, as written in source, for diagnostics.
+     *
+     * @return the annotation that selects this mode, such as {@code @ReadonlyState}
+     */
+    @Override
+    public String toString() {
+        return "@" + annotation.getSimpleName();
     }
 }

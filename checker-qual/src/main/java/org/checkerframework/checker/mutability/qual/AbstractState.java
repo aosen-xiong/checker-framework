@@ -13,16 +13,17 @@ import java.lang.annotation.Target;
  * <p>The mode guarantees that the method preserves the abstract state of each {@code @Immutable}
  * object that exists when it starts. {@link Assignable} fields are not part of that state.
  *
- * <p>A method has at most one mode annotation. A method without one is checked in {@link AS}. A
- * method may call methods of its own mode or a stronger one: {@link TS} is the strongest, {@link
- * RS} and {@link CS} both refine {@link AS}, and {@link RS} and {@link CS} are incomparable.
+ * <p>A method has at most one mode annotation. A method without one is checked in {@link
+ * AbstractState}. A method may call methods of its own mode or a stronger one: {@link
+ * TransitiveState} is the strongest, {@link ReadonlyState} and {@link ConcreteState} both refine
+ * {@link AbstractState}, and {@link ReadonlyState} and {@link ConcreteState} are incomparable.
  *
- * @see AS
- * @see CS
- * @see RS
- * @see TS
+ * @see AbstractState
+ * @see ConcreteState
+ * @see ReadonlyState
+ * @see TransitiveState
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD})
-public @interface AS {}
+public @interface AbstractState {}

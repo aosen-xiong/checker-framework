@@ -242,22 +242,22 @@ public class MutabilityNoInitAnnotatedTypeFactory
 
     /**
      * Returns the mode {@code method} is checked in: its single declared mode, or {@link
-     * MethodMode#AS} if it declares none. A method that declares more than one mode is reported by
-     * the visitor and checked in {@link MethodMode#AS}.
+     * MethodMode#ABSTRACT_STATE} if it declares none. A method that declares more than one mode is
+     * reported by the visitor and checked in {@link MethodMode#ABSTRACT_STATE}.
      *
      * @param method a method
      * @return the mode {@code method} is checked in
      */
     public MethodMode getMethodMode(ExecutableElement method) {
         List<MethodMode> modes = getDeclaredMethodModes(method);
-        return modes.size() == 1 ? modes.get(0) : MethodMode.AS;
+        return modes.size() == 1 ? modes.get(0) : MethodMode.ABSTRACT_STATE;
     }
 
     /**
      * Returns the mode of the method whose body contains {@code tree}. Lambda bodies take the mode
      * of their enclosing method. A tree outside any method, such as a field initializer, or a tree
      * in a class nested inside a method but outside that class's own methods, is in {@link
-     * MethodMode#AS}.
+     * MethodMode#ABSTRACT_STATE}.
      *
      * @param tree a tree in the current compilation unit
      * @return the mode {@code tree} is checked in
@@ -265,25 +265,25 @@ public class MutabilityNoInitAnnotatedTypeFactory
     MethodMode getMethodModeOf(Tree tree) {
         TreePath path = getPath(tree);
         if (path == null) {
-            return MethodMode.AS;
+            return MethodMode.ABSTRACT_STATE;
         }
         Tree boundary = TreePathUtil.enclosingOfKind(path, MODE_BOUNDARY_KINDS);
         if (!(boundary instanceof MethodTree)) {
-            return MethodMode.AS;
+            return MethodMode.ABSTRACT_STATE;
         }
         ExecutableElement method = TreeUtils.elementFromDeclaration((MethodTree) boundary);
-        return method == null ? MethodMode.AS : getMethodMode(method);
+        return method == null ? MethodMode.ABSTRACT_STATE : getMethodMode(method);
     }
 
     /**
      * Returns the mode viewpoint adaptation is currently performed in: the mode of the innermost
-     * tree being typed, or {@link MethodMode#AS} outside any tree.
+     * tree being typed, or {@link MethodMode#ABSTRACT_STATE} outside any tree.
      *
      * @return the current method mode
      */
     public MethodMode getCurrentMethodMode() {
         MethodMode mode = methodModeStack.peek();
-        return mode == null ? MethodMode.AS : mode;
+        return mode == null ? MethodMode.ABSTRACT_STATE : mode;
     }
 
     @Override
@@ -311,9 +311,10 @@ public class MutabilityNoInitAnnotatedTypeFactory
      * {@inheritDoc}
      *
      * <p>The cache is keyed on the method and receiver only, so it is safe only while the adapted
-     * method type does not depend on the caller's mode. {@link MethodMode#AS} and {@link
-     * MethodMode#CS} share one value adaptation and may use it; {@link MethodMode#RS} and {@link
-     * MethodMode#TS} callers neither read nor write it.
+     * method type does not depend on the caller's mode. {@link MethodMode#ABSTRACT_STATE} and
+     * {@link MethodMode#CONCRETE_STATE} share one value adaptation and may use it; {@link
+     * MethodMode#READONLY_STATE} and {@link MethodMode#TRANSITIVE_STATE} callers neither read nor
+     * write it.
      */
     @Override
     protected boolean shouldCacheMethodAsMemberOf() {

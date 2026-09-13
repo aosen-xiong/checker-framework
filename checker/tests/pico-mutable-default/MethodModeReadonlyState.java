@@ -1,15 +1,18 @@
-import org.checkerframework.checker.mutability.qual.AS;
-import org.checkerframework.checker.mutability.qual.CS;
+import org.checkerframework.checker.mutability.qual.AbstractState;
+import org.checkerframework.checker.mutability.qual.ConcreteState;
 import org.checkerframework.checker.mutability.qual.Mutable;
-import org.checkerframework.checker.mutability.qual.RS;
 import org.checkerframework.checker.mutability.qual.Readonly;
-import org.checkerframework.checker.mutability.qual.TS;
+import org.checkerframework.checker.mutability.qual.ReadonlyState;
+import org.checkerframework.checker.mutability.qual.TransitiveState;
 
-// RS and TS change one value-adaptation rule: a declared @Mutable member read through a
-// non-@Mutable receiver adapts to @MutabilityLost. AS and CS keep the ordinary rule, and the
+// readonly-state and transitive-state change one value-adaptation rule: a declared @Mutable member
+// read through a
+// non-@Mutable receiver adapts to @MutabilityLost. abstract-state and concrete-state keep the
+// ordinary rule, and the
 // receiver position is adapted the same way in every mode.
 //
-// An RS or TS method may not have a @Mutable receiver or parameter, so the RS and TS methods below
+// An readonly-state or transitive-state method may not have a @Mutable receiver or parameter, so
+// the readonly-state and transitive-state methods below
 // declare @Readonly receivers. Two methods keep a @Mutable parameter on purpose, to test adaptation
 // through a @Mutable reference, and expect method.mode.signature.mutable for it.
 @Mutable class ModeRep {
@@ -31,33 +34,33 @@ import org.checkerframework.checker.mutability.qual.TS;
 }
 
 class MethodModeReadonlyState {
-    @AS
+    @AbstractState
     void inspectAS(@Readonly ModeStore s) {
-        // AS: a readonly root can recover a mutable reference.
+        // abstract-state: a readonly root can recover a mutable reference.
         @Mutable ModeRep r = s.alias;
         r.clear();
     }
 
-    @RS
+    @ReadonlyState
     void inspectRS(@Readonly MethodModeReadonlyState this, @Readonly ModeStore s) {
         // :: error: (assignment.type.incompatible)
         @Mutable ModeRep r = s.alias;
         @Readonly ModeRep q = s.alias;
     }
 
-    @TS
+    @TransitiveState
     void inspectTS(@Readonly MethodModeReadonlyState this, @Readonly ModeStore s) {
         // :: error: (assignment.type.incompatible)
         @Mutable ModeRep r = s.alias;
     }
 
-    @CS
+    @ConcreteState
     void inspectCS(@Readonly ModeStore s) {
-        // CS changes only assignability, so the read is as in AS.
+        // concrete-state changes only assignability, so the read is as in abstract-state.
         @Mutable ModeRep r = s.alias;
     }
 
-    @RS
+    @ReadonlyState
     void throughMutableReceiver(
             @Readonly MethodModeReadonlyState this,
             // :: error: (method.mode.signature.mutable)
@@ -66,22 +69,24 @@ class MethodModeReadonlyState {
         @Mutable ModeRep r = s.alias;
     }
 
-    @RS
+    @ReadonlyState
     void methodReturn(@Readonly MethodModeReadonlyState this, @Readonly ModeStore s) {
         // The same rule applies to a declared @Mutable return type.
         // :: error: (assignment.type.incompatible)
         @Mutable ModeRep r = s.getAlias();
     }
 
-    @AS
+    @AbstractState
     void methodReturnAS(@Readonly ModeStore s) {
-        // An AS call of the same method on the same receiver type may use the method-type cache.
+        // An abstract-state call of the same method on the same receiver type may use the
+        // method-type cache.
         @Mutable ModeRep r = s.getAlias();
     }
 
-    @RS
+    @ReadonlyState
     void methodReturnAfterAS(@Readonly MethodModeReadonlyState this, @Readonly ModeStore s) {
-        // An RS call after an AS one must not reuse the AS method type.
+        // An readonly-state call after an abstract-state one must not reuse the abstract-state
+        // method type.
         // :: error: (assignment.type.incompatible)
         @Mutable ModeRep r = s.getAlias();
     }
@@ -90,29 +95,29 @@ class MethodModeReadonlyState {
     // two calls above do not share a method-type cache entry. Calls on the same field do.
     @Readonly ModeStore store;
 
-    @AS
+    @AbstractState
     void fieldReturnAS() {
         @Mutable ModeRep r = store.getAlias();
     }
 
-    @RS
+    @ReadonlyState
     void fieldReturnAfterAS(@Readonly MethodModeReadonlyState this) {
         // :: error: (assignment.type.incompatible)
         @Mutable ModeRep r = store.getAlias();
     }
 
-    @RS
+    @ReadonlyState
     void fieldReturnBeforeAS(@Readonly MethodModeReadonlyState this) {
         // :: error: (assignment.type.incompatible)
         @Mutable ModeRep r = store.getAlias();
     }
 
-    @AS
+    @AbstractState
     void fieldReturnAfterRS() {
         @Mutable ModeRep r = store.getAlias();
     }
 
-    @RS
+    @ReadonlyState
     void receiverNotScoped(
             @Readonly MethodModeReadonlyState this,
             // :: error: (method.mode.signature.mutable)
