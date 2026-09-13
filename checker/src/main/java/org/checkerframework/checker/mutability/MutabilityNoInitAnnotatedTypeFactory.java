@@ -32,6 +32,7 @@ import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedTypeVari
 import org.checkerframework.framework.type.AnnotatedTypeParameterBounds;
 import org.checkerframework.framework.type.GenericAnnotatedTypeFactory;
 import org.checkerframework.framework.type.SyntheticArrays;
+import org.checkerframework.framework.type.TypeHierarchy;
 import org.checkerframework.framework.type.ViewpointAdapter;
 import org.checkerframework.framework.type.treeannotator.ListTreeAnnotator;
 import org.checkerframework.framework.type.treeannotator.LiteralTreeAnnotator;
@@ -148,6 +149,16 @@ public class MutabilityNoInitAnnotatedTypeFactory
     @Override
     protected ViewpointAdapter createViewpointAdapter() {
         return new MutabilityViewpointAdapter(this);
+    }
+
+    @Override
+    protected TypeHierarchy createTypeHierarchy() {
+        return new MutabilityTypeHierarchy(
+                checker,
+                getQualifierHierarchy(),
+                ignoreRawTypeArguments,
+                checker.hasOption("invariantArrays"),
+                this);
     }
 
     /**
