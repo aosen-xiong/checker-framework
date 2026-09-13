@@ -60,6 +60,19 @@ public enum MethodMode {
     }
 
     /**
+     * Returns true if a method in this mode may call a method in {@code callee}'s mode. The
+     * callee's mode must be at least as strong as the caller's. {@link #TRANSITIVE_STATE} is the
+     * strongest, and {@link #READONLY_STATE} and {@link #CONCRETE_STATE} each refine {@link
+     * #ABSTRACT_STATE} but are incomparable.
+     *
+     * @param callee the mode of the called method
+     * @return true if a method in this mode may call a method in {@code callee}'s mode
+     */
+    public boolean allowsCall(MethodMode callee) {
+        return callee == this || callee == TRANSITIVE_STATE || this == ABSTRACT_STATE;
+    }
+
+    /**
      * Returns the annotation that selects this mode, as written in source, for diagnostics.
      *
      * @return the annotation that selects this mode, such as {@code @ReadonlyState}

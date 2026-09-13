@@ -14,7 +14,9 @@ import org.checkerframework.checker.mutability.qual.TransitiveState;
 // An readonly-state or transitive-state method may not have a @Mutable receiver or parameter, so
 // the readonly-state and transitive-state methods below
 // declare @Readonly receivers. Two methods keep a @Mutable parameter on purpose, to test adaptation
-// through a @Mutable reference, and expect method.mode.signature.mutable for it.
+// through a @Mutable reference, and expect method.mode.signature.mutable for it. The called methods
+// have no mode annotation, so they are abstract-state, and each call from a readonly-state method
+// also expects method.mode.call.invalid.
 @Mutable class ModeRep {
     void clear(@Mutable ModeRep this) {}
 }
@@ -72,7 +74,7 @@ class MethodModeReadonlyState {
     @ReadonlyState
     void methodReturn(@Readonly MethodModeReadonlyState this, @Readonly ModeStore s) {
         // The same rule applies to a declared @Mutable return type.
-        // :: error: (assignment.type.incompatible)
+        // :: error: (assignment.type.incompatible) :: error: (method.mode.call.invalid)
         @Mutable ModeRep r = s.getAlias();
     }
 
@@ -87,7 +89,7 @@ class MethodModeReadonlyState {
     void methodReturnAfterAS(@Readonly MethodModeReadonlyState this, @Readonly ModeStore s) {
         // An readonly-state call after an abstract-state one must not reuse the abstract-state
         // method type.
-        // :: error: (assignment.type.incompatible)
+        // :: error: (assignment.type.incompatible) :: error: (method.mode.call.invalid)
         @Mutable ModeRep r = s.getAlias();
     }
 
@@ -102,13 +104,13 @@ class MethodModeReadonlyState {
 
     @ReadonlyState
     void fieldReturnAfterAS(@Readonly MethodModeReadonlyState this) {
-        // :: error: (assignment.type.incompatible)
+        // :: error: (assignment.type.incompatible) :: error: (method.mode.call.invalid)
         @Mutable ModeRep r = store.getAlias();
     }
 
     @ReadonlyState
     void fieldReturnBeforeAS(@Readonly MethodModeReadonlyState this) {
-        // :: error: (assignment.type.incompatible)
+        // :: error: (assignment.type.incompatible) :: error: (method.mode.call.invalid)
         @Mutable ModeRep r = store.getAlias();
     }
 
@@ -123,6 +125,8 @@ class MethodModeReadonlyState {
             // :: error: (method.mode.signature.mutable)
             @Mutable ModeRep r) {
         // The declared @Mutable receiver of clear() is not lost through a @Mutable call site.
+        // clear() has no mode annotation, so it is abstract-state and cannot be called here.
+        // :: error: (method.mode.call.invalid)
         r.clear();
     }
 }

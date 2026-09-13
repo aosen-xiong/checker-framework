@@ -85,6 +85,13 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
     private static final @CompilerMessageKey String MODE_SIGNATURE_MUTABLE =
             "method.mode.signature.mutable";
 
+    /** Error key for a call to a method whose mode is not at least as strong as the caller's. */
+    private static final @CompilerMessageKey String MODE_CALL_INVALID = "method.mode.call.invalid";
+
+    /** Error key for an overriding method whose mode differs from an overridden method's. */
+    private static final @CompilerMessageKey String MODE_OVERRIDE_INVALID =
+            "method.mode.override.invalid";
+
     /**
      * Create a new MutabilityNoInitVisitor.
      *
@@ -238,6 +245,9 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
         if (methodElement != null
                 && atypeFactory.getDeclaredMethodModes(methodElement).size() > 1) {
             checker.reportError(tree, "method.mode.multiple", methodElement);
+        }
+        if (methodElement != null) {
+            checkMethodModeOverride(tree, methodElement);
         }
         AnnotatedExecutableType executableType = atypeFactory.getAnnotatedType(tree);
         if (methodElement != null
@@ -654,7 +664,56 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
     public Void visitMethodInvocation(MethodInvocationTree node, Void p) {
         Void result = super.visitMethodInvocation(node, p);
         checkLostMethodTypeParameterBounds(node);
+        checkMethodModeCall(node);
         return result;
+    }
+
+    /**
+     * Reports a call to a method whose mode is not at least as strong as the mode of the method
+     * containing the call. A method without a mode annotation, including a library method, is
+     * abstract-state. A lambda body uses the mode of its enclosing method. Constructor calls are
+     * not restricted, since object creation is allowed in every mode.
+     *
+     * @param tree the method invocation to check
+     */
+    private void checkMethodModeCall(MethodInvocationTree tree) {
+        ExecutableElement callee = TreeUtils.elementFromUse(tree);
+        if (callee == null || callee.getKind() == ElementKind.CONSTRUCTOR) {
+            return;
+        }
+        MethodMode callerMode = atypeFactory.getMethodModeOf(tree);
+        MethodMode calleeMode = atypeFactory.getMethodMode(callee);
+        if (!callerMode.allowsCall(calleeMode)) {
+            checker.reportError(tree, MODE_CALL_INVALID, callerMode, callee, calleeMode);
+        }
+    }
+
+    /**
+     * Reports an overriding method whose mode differs from the mode of a method it overrides. A
+     * call is checked against the mode of the method it resolves to, and dispatch may run an
+     * override instead, so an override must have exactly the same mode. A stronger mode is rejected
+     * as well as a weaker one, as in the model.
+     *
+     * @param tree the method declaration
+     * @param method the declared method
+     */
+    private void checkMethodModeOverride(MethodTree tree, ExecutableElement method) {
+        if (TreeUtils.isConstructor(tree) || ElementUtils.isStatic(method)) {
+            return;
+        }
+        MethodMode mode = atypeFactory.getMethodMode(method);
+        for (ExecutableElement overridden : ElementUtils.getOverriddenMethods(method, types)) {
+            MethodMode overriddenMode = atypeFactory.getMethodMode(overridden);
+            if (mode != overriddenMode) {
+                checker.reportError(
+                        tree,
+                        MODE_OVERRIDE_INVALID,
+                        method,
+                        mode,
+                        ElementUtils.enclosingTypeElement(overridden),
+                        overriddenMode);
+            }
+        }
     }
 
     /**
