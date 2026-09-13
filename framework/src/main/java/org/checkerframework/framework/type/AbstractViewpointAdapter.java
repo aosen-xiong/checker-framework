@@ -197,7 +197,7 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
 
         // 3d. Adapt method receiver type.
         if (methodReceiver != null) {
-            AnnotatedTypeMirror mr = combineTypeWithType(receiverType, methodReceiver);
+            AnnotatedTypeMirror mr = combineTypeWithReceiverType(receiverType, methodReceiver);
             mappings.put(methodReceiver, mr);
         }
 
@@ -255,6 +255,24 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
      * @param declared declared type
      * @return {@link AnnotatedTypeMirror} after viewpoint adaptation
      */
+    /**
+     * Viewpoint-adapts a declared method RECEIVER against the call-site receiver.
+     *
+     * <p>Defaults to {@link #combineTypeWithType}, which is right for parameters, type-variable
+     * bounds, and return types. A type system whose adaptation loses information for a
+     * receiver-dependent qualifier may need a different rule here: a receiver-dependent method
+     * imposes no requirement of its own on the receiver, so adapting its declared receiver the same
+     * way as a value makes the method uncallable through such a reference.
+     *
+     * @param receiverType the call-site receiver type
+     * @param declaredReceiverType the declared method receiver type
+     * @return the adapted receiver type
+     */
+    protected AnnotatedTypeMirror combineTypeWithReceiverType(
+            AnnotatedTypeMirror receiverType, AnnotatedTypeMirror declaredReceiverType) {
+        return combineTypeWithType(receiverType, declaredReceiverType);
+    }
+
     protected AnnotatedTypeMirror combineTypeWithType(
             AnnotatedTypeMirror receiver, AnnotatedTypeMirror declared) {
         assert receiver != null && declared != null;

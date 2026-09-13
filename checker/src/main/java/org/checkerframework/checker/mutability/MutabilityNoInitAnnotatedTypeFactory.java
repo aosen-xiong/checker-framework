@@ -129,6 +129,15 @@ public class MutabilityNoInitAnnotatedTypeFactory
         return new MutabilityViewpointAdapter(this);
     }
 
+    /**
+     * Returns the mutability viewpoint adapter.
+     *
+     * @return the viewpoint adapter, typed
+     */
+    public MutabilityViewpointAdapter getMutabilityViewpointAdapter() {
+        return (MutabilityViewpointAdapter) viewpointAdapter;
+    }
+
     /** Annotators are executed by the added order. Same for Type Annotator */
     @Override
     protected TreeAnnotator createTreeAnnotator() {

@@ -72,4 +72,40 @@ public class MutabilityViewpointAdapter extends AbstractViewpointAdapter {
                 || AnnotationUtils.areSame(annotation, mutabilityTypeFactory.POLY_MUTABLE)
                 || AnnotationUtils.areSame(annotation, mutabilityTypeFactory.LOST);
     }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The receiver position uses a different rule from value adaptation:
+     *
+     * <pre>
+     *   value:    &#64;Readonly |&gt; &#64;ReceiverDependentMutable = &#64;MutabilityLost
+     *   receiver: &#64;Readonly |&gt; &#64;ReceiverDependentMutable = &#64;Readonly
+     * </pre>
+     *
+     * <p>Losing the mutability is correct for a field or a return type: reading receiver-dependent
+     * state through a readonly reference genuinely loses the precise mutability. It is wrong for a
+     * receiver. A receiver-dependent method imposes no requirement of its own on the receiver — it
+     * adapts to whatever the caller has — so adapting its declared receiver to {@code @MutabilityLost}
+     * makes every such method uncallable on a {@code @Readonly} reference, and rules out ordinary
+     * read-only uses like passing a collection to a method that only iterates it.
+     */
+    @Override
+    protected AnnotatedTypeMirror combineTypeWithReceiverType(
+            AnnotatedTypeMirror receiverType, AnnotatedTypeMirror declaredReceiverType) {
+        AnnotationMirror declared =
+                declaredReceiverType.getAnnotationInHierarchy(mutabilityTypeFactory.READONLY);
+        if (declared != null
+                && AnnotationUtils.areSame(
+                        declared, mutabilityTypeFactory.RECEIVER_DEPENDENT_MUTABLE)) {
+            AnnotationMirror callSite =
+                    receiverType.getAnnotationInHierarchy(mutabilityTypeFactory.READONLY);
+            if (callSite != null) {
+                AnnotatedTypeMirror adapted = declaredReceiverType.shallowCopy();
+                adapted.replaceAnnotation(callSite);
+                return adapted;
+            }
+        }
+        return combineTypeWithType(receiverType, declaredReceiverType);
+    }
 }
