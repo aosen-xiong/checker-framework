@@ -222,6 +222,11 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
 
     @Override
     public void processMethodTree(String className, MethodTree tree) {
+        ExecutableElement methodElement = TreeUtils.elementFromDeclaration(tree);
+        if (methodElement != null
+                && atypeFactory.getDeclaredMethodModes(methodElement).size() > 1) {
+            checker.reportError(tree, "method.mode.multiple", methodElement);
+        }
         AnnotatedExecutableType executableType = atypeFactory.getAnnotatedType(tree);
         // Report an error if the constructor return type is @Readonly or @PolyMutable. Validity is
         // also checked in BaseTypeValidator.
