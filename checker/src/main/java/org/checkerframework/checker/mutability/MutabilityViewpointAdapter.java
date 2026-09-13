@@ -22,6 +22,12 @@ public class MutabilityViewpointAdapter extends AbstractViewpointAdapter {
     private final MutabilityNoInitAnnotatedTypeFactory mutabilityTypeFactory;
 
     /**
+     * True while adapting a method's declared receiver. Method modes change only value positions:
+     * the receiver is the viewpoint itself, so its adaptation is the same in every mode.
+     */
+    private boolean adaptingReceiver = false;
+
+    /**
      * Create a new {@link MutabilityViewpointAdapter}.
      *
      * @param atypeFactory the type factory
@@ -56,6 +62,16 @@ public class MutabilityViewpointAdapter extends AbstractViewpointAdapter {
                 return mutabilityTypeFactory.LOST;
             }
             return receiverAnnotation;
+        }
+
+        // In RS and TS, a declared @Mutable member stays @Mutable only through a @Mutable receiver
+        // and is lost through every other one, so a call that starts with no mutable reference cannot
+        // obtain one. AS and CS keep the ordinary rule, and receiver positions are never scoped.
+        if (!adaptingReceiver
+                && AnnotationUtils.areSame(declaredAnnotation, mutabilityTypeFactory.MUTABLE)
+                && !AnnotationUtils.areSame(receiverAnnotation, mutabilityTypeFactory.MUTABLE)
+                && mutabilityTypeFactory.getCurrentMethodMode().changesValueAdaptation()) {
+            return mutabilityTypeFactory.LOST;
         }
 
         if (isFixedQualifier(declaredAnnotation)) {
@@ -104,6 +120,25 @@ public class MutabilityViewpointAdapter extends AbstractViewpointAdapter {
      */
     @Override
     protected AnnotatedTypeMirror combineTypeWithReceiverType(
+            AnnotatedTypeMirror receiverType, AnnotatedTypeMirror declaredReceiverType) {
+        boolean wasAdaptingReceiver = adaptingReceiver;
+        adaptingReceiver = true;
+        try {
+            return combineReceiver(receiverType, declaredReceiverType);
+        } finally {
+            adaptingReceiver = wasAdaptingReceiver;
+        }
+    }
+
+    /**
+     * Adapts a method's declared receiver through the call-site receiver. See {@link
+     * #combineTypeWithReceiverType}.
+     *
+     * @param receiverType the call-site receiver type
+     * @param declaredReceiverType the declared method receiver type
+     * @return the adapted receiver type
+     */
+    private AnnotatedTypeMirror combineReceiver(
             AnnotatedTypeMirror receiverType, AnnotatedTypeMirror declaredReceiverType) {
         AnnotationMirror declared =
                 declaredReceiverType.getAnnotationInHierarchy(mutabilityTypeFactory.READONLY);
