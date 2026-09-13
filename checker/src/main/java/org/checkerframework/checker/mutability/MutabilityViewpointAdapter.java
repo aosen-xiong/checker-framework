@@ -97,6 +97,10 @@ public class MutabilityViewpointAdapter extends AbstractViewpointAdapter {
      * adapts to whatever the caller has — so adapting its declared receiver to {@code @MutabilityLost}
      * makes every such method uncallable on a {@code @Readonly} reference, and rules out ordinary
      * read-only uses like passing a collection to a method that only iterates it.
+     *
+     * <p>The rule is uniform: a {@code @MutabilityLost} call site adapts the receiver to {@code
+     * @MutabilityLost}. Such a call is rejected by {@code MutabilityNoInitVisitor}, because the
+     * adapted receiver type contains {@code @MutabilityLost}, not by adaptation.
      */
     @Override
     protected AnnotatedTypeMirror combineTypeWithReceiverType(

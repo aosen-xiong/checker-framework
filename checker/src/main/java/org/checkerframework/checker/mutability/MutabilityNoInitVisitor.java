@@ -63,6 +63,9 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
     /** Error key for {@code @MutabilityLost} in adapted parameter types. */
     private static final @CompilerMessageKey String LOST_PARAMETER = "mutability.lost.parameter";
 
+    /** Error key for {@code @MutabilityLost} in an adapted method receiver type. */
+    private static final @CompilerMessageKey String LOST_RECEIVER = "mutability.lost.receiver";
+
     /** Error key for {@code @MutabilityLost} in adapted type parameter bounds. */
     private static final @CompilerMessageKey String LOST_IN_BOUNDS = "mutability.lost.in.bounds";
 
@@ -406,6 +409,27 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
             checker.reportError(tree, "array.new.invalid", type);
         }
         return super.visitNewArray(tree, p);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>A method cannot be invoked when its adapted receiver type contains {@code
+     * @MutabilityLost}. Receiver adaptation is uniform, so a {@code @MutabilityLost} call site adapts
+     * a {@code @ReceiverDependentMutable} receiver to {@code @MutabilityLost}; this check, like the
+     * one for parameters, is what rejects the call.
+     */
+    @Override
+    protected void checkMethodInvocability(
+            AnnotatedExecutableType method, MethodInvocationTree tree) {
+        AnnotatedDeclaredType receiver = method.getReceiverType();
+        if (receiver != null
+                && !ElementUtils.isStatic(method.getElement())
+                && AnnotatedTypes.containsModifier(receiver, atypeFactory.LOST)) {
+            checker.reportError(tree, LOST_RECEIVER);
+            return;
+        }
+        super.checkMethodInvocability(method, tree);
     }
 
     @Override
