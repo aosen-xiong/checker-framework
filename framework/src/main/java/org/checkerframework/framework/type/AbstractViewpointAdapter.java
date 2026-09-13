@@ -250,13 +250,6 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
     }
 
     /**
-     * Viewpoint adapt declared type to receiver type, and return the result atm
-     *
-     * @param receiver receiver type
-     * @param declared declared type
-     * @return {@link AnnotatedTypeMirror} after viewpoint adaptation
-     */
-    /**
      * Viewpoint-adapts a declared method RECEIVER against the call-site receiver.
      *
      * <p>Defaults to {@link #combineTypeWithType}, which is right for parameters, type-variable
@@ -274,6 +267,13 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
         return combineTypeWithType(receiverType, declaredReceiverType);
     }
 
+    /**
+     * Viewpoint adapt declared type to receiver type, and return the result atm
+     *
+     * @param receiver receiver type
+     * @param declared declared type
+     * @return {@link AnnotatedTypeMirror} after viewpoint adaptation
+     */
     protected AnnotatedTypeMirror combineTypeWithType(
             AnnotatedTypeMirror receiver, AnnotatedTypeMirror declared) {
         assert receiver != null && declared != null;
