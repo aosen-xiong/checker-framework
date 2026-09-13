@@ -8,6 +8,10 @@ import org.checkerframework.checker.mutability.qual.TS;
 // RS and TS change one value-adaptation rule: a declared @Mutable member read through a
 // non-@Mutable receiver adapts to @MutabilityLost. AS and CS keep the ordinary rule, and the
 // receiver position is adapted the same way in every mode.
+//
+// An RS or TS method may not have a @Mutable receiver or parameter, so the RS and TS methods below
+// declare @Readonly receivers. Two methods keep a @Mutable parameter on purpose, to test adaptation
+// through a @Mutable reference, and expect method.mode.signature.mutable for it.
 @Mutable class ModeRep {
     void clear(@Mutable ModeRep this) {}
 }
@@ -35,14 +39,14 @@ class MethodModeReadonlyState {
     }
 
     @RS
-    void inspectRS(@Readonly ModeStore s) {
+    void inspectRS(@Readonly MethodModeReadonlyState this, @Readonly ModeStore s) {
         // :: error: (assignment.type.incompatible)
         @Mutable ModeRep r = s.alias;
         @Readonly ModeRep q = s.alias;
     }
 
     @TS
-    void inspectTS(@Readonly ModeStore s) {
+    void inspectTS(@Readonly MethodModeReadonlyState this, @Readonly ModeStore s) {
         // :: error: (assignment.type.incompatible)
         @Mutable ModeRep r = s.alias;
     }
@@ -54,13 +58,16 @@ class MethodModeReadonlyState {
     }
 
     @RS
-    void throughMutableReceiver(@Mutable ModeStore s) {
+    void throughMutableReceiver(
+            @Readonly MethodModeReadonlyState this,
+            // :: error: (method.mode.signature.mutable)
+            @Mutable ModeStore s) {
         // A @Mutable receiver keeps the declared @Mutable member.
         @Mutable ModeRep r = s.alias;
     }
 
     @RS
-    void methodReturn(@Readonly ModeStore s) {
+    void methodReturn(@Readonly MethodModeReadonlyState this, @Readonly ModeStore s) {
         // The same rule applies to a declared @Mutable return type.
         // :: error: (assignment.type.incompatible)
         @Mutable ModeRep r = s.getAlias();
@@ -73,7 +80,7 @@ class MethodModeReadonlyState {
     }
 
     @RS
-    void methodReturnAfterAS(@Readonly ModeStore s) {
+    void methodReturnAfterAS(@Readonly MethodModeReadonlyState this, @Readonly ModeStore s) {
         // An RS call after an AS one must not reuse the AS method type.
         // :: error: (assignment.type.incompatible)
         @Mutable ModeRep r = s.getAlias();
@@ -89,13 +96,13 @@ class MethodModeReadonlyState {
     }
 
     @RS
-    void fieldReturnAfterAS() {
+    void fieldReturnAfterAS(@Readonly MethodModeReadonlyState this) {
         // :: error: (assignment.type.incompatible)
         @Mutable ModeRep r = store.getAlias();
     }
 
     @RS
-    void fieldReturnBeforeAS() {
+    void fieldReturnBeforeAS(@Readonly MethodModeReadonlyState this) {
         // :: error: (assignment.type.incompatible)
         @Mutable ModeRep r = store.getAlias();
     }
@@ -106,7 +113,10 @@ class MethodModeReadonlyState {
     }
 
     @RS
-    void receiverNotScoped(@Mutable ModeRep r) {
+    void receiverNotScoped(
+            @Readonly MethodModeReadonlyState this,
+            // :: error: (method.mode.signature.mutable)
+            @Mutable ModeRep r) {
         // The declared @Mutable receiver of clear() is not lost through a @Mutable call site.
         r.clear();
     }

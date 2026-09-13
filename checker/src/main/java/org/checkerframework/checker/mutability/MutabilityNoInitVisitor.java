@@ -26,6 +26,9 @@ import org.checkerframework.framework.type.AnnotatedTypeMirror;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedArrayType;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedDeclaredType;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedExecutableType;
+import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedIntersectionType;
+import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedTypeVariable;
+import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedWildcardType;
 import org.checkerframework.framework.type.AnnotatedTypeParameterBounds;
 import org.checkerframework.framework.util.AnnotatedTypes;
 import org.checkerframework.javacutil.AnnotationMirrorSet;
@@ -36,10 +39,12 @@ import org.checkerframework.javacutil.TreePathUtil;
 import org.checkerframework.javacutil.TreeUtils;
 import org.checkerframework.javacutil.TypesUtils;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 import javax.lang.model.element.AnnotationMirror;
+import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
@@ -72,6 +77,12 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
     /** Error key for {@code @MutabilityLost} in a type argument. */
     private static final @CompilerMessageKey String LOST_TYPE_ARGUMENT =
             "mutability.lost.type.argument";
+
+    /**
+     * Error key for a receiver or parameter of an RS or TS method that may carry {@code @Mutable}.
+     */
+    private static final @CompilerMessageKey String MODE_SIGNATURE_MUTABLE =
+            "method.mode.signature.mutable";
 
     /**
      * Create a new MutabilityNoInitVisitor.
@@ -228,6 +239,11 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
             checker.reportError(tree, "method.mode.multiple", methodElement);
         }
         AnnotatedExecutableType executableType = atypeFactory.getAnnotatedType(tree);
+        if (methodElement != null
+                && atypeFactory.getMethodMode(methodElement).changesValueAdaptation()) {
+            checkProtectedSignature(
+                    tree, atypeFactory.getMethodMode(methodElement), executableType);
+        }
         // Report an error if the constructor return type is @Readonly or @PolyMutable. Validity is
         // also checked in BaseTypeValidator.
         if (TreeUtils.isConstructor(tree)) {
@@ -240,6 +256,190 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
         }
 
         super.processMethodTree(className, tree);
+    }
+
+    /**
+     * Reports each receiver or parameter of an RS or TS method whose declared type may carry
+     * mutable authority into the method.
+     *
+     * <p>This is the model's {@code MethodEntryTypesNoMutCtx}: no {@code @Mutable} anywhere in the
+     * receiver or parameter types, following the declared bounds of the type variables they use.
+     * The return type is not checked.
+     *
+     * @param tree the method declaration
+     * @param mode the method's mode, RS or TS
+     * @param executableType the declared type of the method
+     */
+    private void checkProtectedSignature(
+            MethodTree tree, MethodMode mode, AnnotatedExecutableType executableType) {
+        AnnotatedDeclaredType receiver = executableType.getReceiverType();
+        if (receiver != null && mayCarryMutable(receiver, new HashSet<>(), new HashSet<>())) {
+            Tree receiverTree = tree.getReceiverParameter();
+            checker.reportError(
+                    receiverTree != null ? receiverTree : tree,
+                    MODE_SIGNATURE_MUTABLE,
+                    "receiver",
+                    mode,
+                    receiver);
+        }
+        List<AnnotatedTypeMirror> parameterTypes = executableType.getParameterTypes();
+        List<? extends VariableTree> parameterTrees = tree.getParameters();
+        for (int i = 0; i < parameterTypes.size(); i++) {
+            AnnotatedTypeMirror parameterType = parameterTypes.get(i);
+            if (mayCarryMutable(parameterType, new HashSet<>(), new HashSet<>())) {
+                boolean hasTree = i < parameterTrees.size();
+                checker.reportError(
+                        hasTree ? parameterTrees.get(i) : tree,
+                        MODE_SIGNATURE_MUTABLE,
+                        hasTree ? "parameter " + parameterTrees.get(i).getName() : "parameter",
+                        mode,
+                        parameterType);
+            }
+        }
+    }
+
+    /**
+     * Returns true if {@code type} may carry mutable authority: {@code @Mutable} occurs in it along
+     * a finite path through type arguments, array components, wildcard and intersection bounds, and
+     * the declared bounds of type variables. This follows the model's {@code containsMutSearch}.
+     * {@code @PolyMutable} is checked as poly, not as {@code @Mutable}.
+     *
+     * <p>A bare type-variable use is read through its whole upper bound, and a bound that is itself
+     * a type variable fails closed. An explicitly qualified use such as {@code @Readonly T}
+     * replaces the head of the bound, so only the bound's type arguments are examined. Expanding a
+     * type variable a second time in the same way closes a cycle, as for {@code T extends
+     * Comparable<T>}.
+     *
+     * @param type the type to search
+     * @param fullBoundExpanded type variables whose whole bound has been expanded
+     * @param boundArgumentsExpanded type variables whose bound's type arguments have been expanded
+     * @return true if {@code type} may carry mutable authority
+     */
+    private boolean mayCarryMutable(
+            AnnotatedTypeMirror type,
+            Set<Element> fullBoundExpanded,
+            Set<Element> boundArgumentsExpanded) {
+        switch (type.getKind()) {
+            case DECLARED:
+                return isMutableAuthority(type.getAnnotationInHierarchy(atypeFactory.READONLY))
+                        || anyMayCarryMutable(
+                                ((AnnotatedDeclaredType) type).getTypeArguments(),
+                                fullBoundExpanded,
+                                boundArgumentsExpanded);
+            case ARRAY:
+                return isMutableAuthority(type.getAnnotationInHierarchy(atypeFactory.READONLY))
+                        || mayCarryMutable(
+                                ((AnnotatedArrayType) type).getComponentType(),
+                                fullBoundExpanded,
+                                boundArgumentsExpanded);
+            case TYPEVAR:
+                {
+                    AnnotatedTypeVariable typeVariable = (AnnotatedTypeVariable) type;
+                    Element variable = typeVariable.getUnderlyingType().asElement();
+                    AnnotatedTypeMirror bound = typeVariable.getUpperBound();
+                    AnnotationMirror useQualifier =
+                            typeVariable.getAnnotationInHierarchy(atypeFactory.READONLY);
+                    if (useQualifier == null) {
+                        if (!fullBoundExpanded.add(variable)) {
+                            return false;
+                        }
+                        if (bound.getKind() == TypeKind.TYPEVAR) {
+                            return true;
+                        }
+                        return mayCarryMutable(bound, fullBoundExpanded, boundArgumentsExpanded);
+                    }
+                    if (isMutableAuthority(useQualifier)) {
+                        return true;
+                    }
+                    if (!boundArgumentsExpanded.add(variable)) {
+                        return false;
+                    }
+                    return boundArgumentsMayCarryMutable(
+                            bound, fullBoundExpanded, boundArgumentsExpanded);
+                }
+            case WILDCARD:
+                {
+                    AnnotatedWildcardType wildcard = (AnnotatedWildcardType) type;
+                    return mayCarryMutable(
+                                    wildcard.getExtendsBound(),
+                                    fullBoundExpanded,
+                                    boundArgumentsExpanded)
+                            || mayCarryMutable(
+                                    wildcard.getSuperBound(),
+                                    fullBoundExpanded,
+                                    boundArgumentsExpanded);
+                }
+            case INTERSECTION:
+                return anyMayCarryMutable(
+                        ((AnnotatedIntersectionType) type).getBounds(),
+                        fullBoundExpanded,
+                        boundArgumentsExpanded);
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Returns true if the type arguments of a type-variable bound may carry mutable authority. The
+     * bound's own head qualifier is not examined.
+     *
+     * @param bound the upper bound of a type variable
+     * @param fullBoundExpanded type variables whose whole bound has been expanded
+     * @param boundArgumentsExpanded type variables whose bound's type arguments have been expanded
+     * @return true if the type arguments of {@code bound} may carry mutable authority
+     */
+    private boolean boundArgumentsMayCarryMutable(
+            AnnotatedTypeMirror bound,
+            Set<Element> fullBoundExpanded,
+            Set<Element> boundArgumentsExpanded) {
+        switch (bound.getKind()) {
+            case DECLARED:
+                return anyMayCarryMutable(
+                        ((AnnotatedDeclaredType) bound).getTypeArguments(),
+                        fullBoundExpanded,
+                        boundArgumentsExpanded);
+            case INTERSECTION:
+                for (AnnotatedTypeMirror component :
+                        ((AnnotatedIntersectionType) bound).getBounds()) {
+                    if (boundArgumentsMayCarryMutable(
+                            component, fullBoundExpanded, boundArgumentsExpanded)) {
+                        return true;
+                    }
+                }
+                return false;
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Returns true if any of {@code types} may carry mutable authority.
+     *
+     * @param types the types to search
+     * @param fullBoundExpanded type variables whose whole bound has been expanded
+     * @param boundArgumentsExpanded type variables whose bound's type arguments have been expanded
+     * @return true if any of {@code types} may carry mutable authority
+     */
+    private boolean anyMayCarryMutable(
+            List<? extends AnnotatedTypeMirror> types,
+            Set<Element> fullBoundExpanded,
+            Set<Element> boundArgumentsExpanded) {
+        for (AnnotatedTypeMirror type : types) {
+            if (mayCarryMutable(type, fullBoundExpanded, boundArgumentsExpanded)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns true if {@code qualifier} grants mutable authority.
+     *
+     * @param qualifier a mutability qualifier, or null
+     * @return true if {@code qualifier} is {@code @Mutable}
+     */
+    private boolean isMutableAuthority(@Nullable AnnotationMirror qualifier) {
+        return qualifier != null && AnnotationUtils.areSame(qualifier, atypeFactory.MUTABLE);
     }
 
     @Override
