@@ -196,11 +196,29 @@ public class MutabilityNoInitAnnotatedTypeFactory
             NewClassTree tree, boolean inferTypeArgs) {
         ParameterizedExecutableType constructorType = super.constructorFromUse(tree, inferTypeArgs);
         AnnotatedExecutableType constructor = constructorType.executableType;
-        // For object creation, if the constructor return type is @RDM and there is no explicit
-        // annotation on the new expression, use the default concrete creation qualifier.
-        if (getExplicitNewClassAnnos(tree).isEmpty()
-                && constructor.getReturnType().hasAnnotation(RECEIVER_DEPENDENT_MUTABLE)) {
-            constructor.getReturnType().replaceAnnotation(MUTABLE);
+        if (getExplicitNewClassAnnos(tree).isEmpty()) {
+            // An anonymous class carries no declaration of its own, so its bound falls back to the
+            // flat default rather than the bound of the type it extends or implements. That yields
+            // @Readonly for an @Immutable supertype and @Mutable for a @ReceiverDependentMutable
+            // one, neither of which describes a freshly created object, and neither of which can be
+            // corrected at the use site: there is nowhere to write a qualifier on `new Base() {}`.
+            // Inherit the supertype's declaration bound instead.
+            if (tree.getClassBody() != null) {
+                AnnotationMirror superBound =
+                        getQualifierHierarchy()
+                                .findAnnotationInSameHierarchy(
+                                        getTypeDeclarationBounds(
+                                                TreeUtils.typeOf(tree.getIdentifier())),
+                                        READONLY);
+                if (superBound != null) {
+                    constructor.getReturnType().replaceAnnotation(superBound);
+                }
+            }
+            // For object creation, if the constructor return type is @RDM, use the default
+            // concrete creation qualifier.
+            if (constructor.getReturnType().hasAnnotation(RECEIVER_DEPENDENT_MUTABLE)) {
+                constructor.getReturnType().replaceAnnotation(MUTABLE);
+            }
         }
         return constructorType;
     }
