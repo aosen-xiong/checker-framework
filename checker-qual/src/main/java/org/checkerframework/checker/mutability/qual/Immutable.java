@@ -42,7 +42,6 @@ import java.math.BigInteger;
             Integer.class,
             Long.class,
             Short.class,
-            Number.class,
             BigDecimal.class,
             BigInteger.class
         },
@@ -73,7 +72,6 @@ import java.math.BigInteger;
             Integer.class,
             Long.class,
             Short.class,
-            Number.class,
             BigDecimal.class,
             BigInteger.class
         })
