@@ -61,6 +61,16 @@ public class MutabilityViewpointAdapter extends AbstractViewpointAdapter {
             if (AnnotationUtils.areSame(receiverAnnotation, mutabilityTypeFactory.READONLY)) {
                 return mutabilityTypeFactory.LOST;
             }
+            // A @PolyMutable receiver is instantiated only at a call, so a value read through it
+            // has no concrete receiver to follow. Letting it propagate as @PolyMutable would let a
+            // nested type argument become a writable contract, so it is lost in every mode. A
+            // method
+            // receiver is adapted by combineTypeWithReceiverType instead and keeps @PolyMutable.
+            if (!adaptingReceiver
+                    && AnnotationUtils.areSame(
+                            receiverAnnotation, mutabilityTypeFactory.POLY_MUTABLE)) {
+                return mutabilityTypeFactory.LOST;
+            }
             return receiverAnnotation;
         }
 

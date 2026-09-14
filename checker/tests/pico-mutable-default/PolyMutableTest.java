@@ -15,7 +15,10 @@ public class PolyMutableTest {
         @ReceiverDependentMutable MutableClass field = new MutableClass();
         @Mutable MutableClass mutableField = new MutableClass();
 
+        // An @RDM field read through a @PolyMutable receiver is @MutabilityLost, which cannot
+        // establish a @PolyMutable result.
         public @PolyMutable MutableClass getField(@PolyMutable RDMHolder this) {
+            // :: error: (return.type.incompatible)
             return field;
         }
 
@@ -38,6 +41,7 @@ public class PolyMutableTest {
         @ReceiverDependentMutable MutableClass field = new MutableClass();
 
         public @PolyMutable MutableClass getField(@PolyMutable ImmutableHolder this) {
+            // :: error: (return.type.incompatible)
             return field;
         }
     }
@@ -64,10 +68,9 @@ public class PolyMutableTest {
     }
 
     @PolyMutable Object bar(@PolyMutable A a) {
-        // Typecheck now. Only when the declared type is @PolyMutable, after viewpoint adadptation,
-        // it becomes @SubsitutablePolyMutable, and then will be resolved by QualifierPolymorphism
-        // Note: viewpoint adaptation(ATF) happens before QualfierPolymorphism(GATF) in current
-        // implementation
+        // read() returns @ReceiverDependentMutable. Through the @PolyMutable receiver a, the result
+        // is @MutabilityLost, so it cannot be assigned to a @PolyMutable variable.
+        // :: error: (assignment.type.incompatible)
         @PolyMutable Object result = a.read(new @Immutable Object());
         return result;
     }
