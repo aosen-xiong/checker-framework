@@ -150,6 +150,7 @@ public class MutabilityValidator extends BaseTypeValidator {
      * @param tree the tree being validated
      * @return true if {@code tree} is an extends or implements clause of the enclosing class
      */
+    @SuppressWarnings("interning:not.interned") // AST node comparison
     private boolean isClassBoundClause(Tree tree) {
         ClassTree enclosing = TreePathUtil.enclosingClass(visitor.getCurrentPath());
         if (enclosing == null) {
