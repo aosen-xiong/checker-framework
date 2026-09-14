@@ -4,9 +4,9 @@ import org.checkerframework.checker.mutability.qual.Readonly;
 import org.checkerframework.checker.mutability.qual.ReadonlyState;
 import org.checkerframework.checker.mutability.qual.TransitiveState;
 
-// Each method declares at most one mode. A method without one is checked in abstract-state. An
-// readonly-state or transitive-state method
-// may not have a @Mutable receiver, so those methods declare a @Readonly one.
+// Each method declares at most one mode. A method without one is checked in abstract-state. A
+// readonly-state or transitive-state method may not have a @Mutable receiver, so those methods
+// declare a @Readonly one.
 class MethodModes {
     void unannotated() {}
 

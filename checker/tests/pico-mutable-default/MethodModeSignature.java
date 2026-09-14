@@ -8,13 +8,12 @@ import org.checkerframework.checker.mutability.qual.ReadonlyState;
 import org.checkerframework.checker.mutability.qual.ReceiverDependentMutable;
 import org.checkerframework.checker.mutability.qual.TransitiveState;
 
-// An readonly-state or transitive-state method's receiver and parameters may not mention @Mutable
-// anywhere, including in
-// nested type arguments and in the declared bounds of the type variables they use. A bare type
-// variable is read through its whole bound. A qualified use such as @Readonly T replaces the head
-// of the bound, so only the bound's type arguments are examined. @PolyMutable is checked as poly,
-// not as @Mutable. The return type is not checked. abstract-state and concrete-state impose
-// nothing.
+// The receiver and parameters of a readonly-state or transitive-state method may not mention
+// @Mutable anywhere, including in nested type arguments and in the declared bounds of the type
+// variables they use. A bare type variable is read through its whole bound. A qualified use such as
+// @Readonly T replaces the head of the bound, so only the bound's type arguments are examined.
+// @PolyMutable is checked as poly, not as @Mutable. The return type is not checked. Abstract-state
+// and concrete-state impose nothing.
 @Mutable class SigCell {}
 
 @ReceiverDependentMutable class SigBox<T extends @Readonly Object> {}

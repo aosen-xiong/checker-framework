@@ -5,18 +5,15 @@ import org.checkerframework.checker.mutability.qual.Readonly;
 import org.checkerframework.checker.mutability.qual.ReadonlyState;
 import org.checkerframework.checker.mutability.qual.TransitiveState;
 
-// readonly-state and transitive-state change one value-adaptation rule: a declared @Mutable member
-// read through a
-// non-@Mutable receiver adapts to @MutabilityLost. abstract-state and concrete-state keep the
-// ordinary rule, and the
-// receiver position is adapted the same way in every mode.
+// Readonly-state and transitive-state change one value-adaptation rule: a declared @Mutable member
+// read through a non-@Mutable receiver adapts to @MutabilityLost. Abstract-state and concrete-state
+// keep the ordinary rule, and the receiver position is adapted the same way in every mode.
 //
-// An readonly-state or transitive-state method may not have a @Mutable receiver or parameter, so
-// the readonly-state and transitive-state methods below
-// declare @Readonly receivers. Two methods keep a @Mutable parameter on purpose, to test adaptation
-// through a @Mutable reference, and expect method.mode.signature.mutable for it. The called methods
-// have no mode annotation, so they are abstract-state, and each call from a readonly-state method
-// also expects method.mode.call.invalid.
+// A readonly-state or transitive-state method may not have a @Mutable receiver or parameter, so
+// those methods below declare @Readonly receivers. Two methods keep a @Mutable parameter on
+// purpose, to test adaptation through a @Mutable reference, and expect
+// method.mode.signature.mutable for it. The called methods have no mode annotation, so they are
+// abstract-state, and each call from a readonly-state method also expects method.mode.call.invalid.
 @Mutable class ModeRep {
     void clear(@Mutable ModeRep this) {}
 }
@@ -38,7 +35,7 @@ import org.checkerframework.checker.mutability.qual.TransitiveState;
 class MethodModeReadonlyState {
     @AbstractState
     void inspectAS(@Readonly ModeStore s) {
-        // abstract-state: a readonly root can recover a mutable reference.
+        // In abstract-state, a readonly root can recover a mutable reference.
         @Mutable ModeRep r = s.alias;
         r.clear();
     }
@@ -58,7 +55,7 @@ class MethodModeReadonlyState {
 
     @ConcreteState
     void inspectCS(@Readonly ModeStore s) {
-        // concrete-state changes only assignability, so the read is as in abstract-state.
+        // Concrete-state changes only assignability, so the read is as in abstract-state.
         @Mutable ModeRep r = s.alias;
     }
 
@@ -87,7 +84,7 @@ class MethodModeReadonlyState {
 
     @ReadonlyState
     void methodReturnAfterAS(@Readonly MethodModeReadonlyState this, @Readonly ModeStore s) {
-        // An readonly-state call after an abstract-state one must not reuse the abstract-state
+        // A readonly-state call after an abstract-state one must not reuse the abstract-state
         // method type.
         // :: error: (assignment.type.incompatible) :: error: (method.mode.call.invalid)
         @Mutable ModeRep r = s.getAlias();

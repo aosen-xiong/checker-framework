@@ -65,11 +65,9 @@ public class MutabilityViewpointAdapter extends AbstractViewpointAdapter {
         }
 
         // In readonly-state and transitive-state, a declared @Mutable member stays @Mutable only
-        // through a @Mutable receiver
-        // and is lost through every other one, so a call that starts with no mutable reference
-        // cannot
-        // obtain one. abstract-state and concrete-state keep the ordinary rule, and receiver
-        // positions are never scoped.
+        // through a @Mutable receiver and is lost through every other one, so a call that starts
+        // with no mutable reference cannot obtain one. Abstract-state and concrete-state keep the
+        // ordinary rule, and receiver positions are never scoped.
         // This must come after the @ReceiverDependentMutable branch above, as in the model's
         // scopedVpa: an @RDM declaration adapts the ordinary way in every mode.
         if (!adaptingReceiver

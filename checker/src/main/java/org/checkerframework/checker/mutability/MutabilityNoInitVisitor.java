@@ -79,8 +79,8 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
             "mutability.lost.type.argument";
 
     /**
-     * Error key for a receiver or parameter of an readonly-state or transitive-state method that
-     * may carry {@code @Mutable}.
+     * Error key for a receiver or parameter of a readonly-state or transitive-state method that may
+     * carry {@code @Mutable}.
      */
     private static final @CompilerMessageKey String MODE_SIGNATURE_MUTABLE =
             "method.mode.signature.mutable";
@@ -270,7 +270,7 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
     }
 
     /**
-     * Reports each receiver or parameter of an readonly-state or transitive-state method whose
+     * Reports each receiver or parameter of a readonly-state or transitive-state method whose
      * declared type may carry mutable authority into the method.
      *
      * <p>This is the model's {@code MethodEntryTypesNoMutCtx}: no {@code @Mutable} anywhere in the
