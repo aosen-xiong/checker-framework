@@ -60,6 +60,17 @@ public enum MethodMode {
     }
 
     /**
+     * Returns true if this mode forbids casts that narrow a mutability qualifier. In {@link
+     * #READONLY_STATE} and {@link #TRANSITIVE_STATE}, a cast may not move down the qualifier order,
+     * since that could recover mutable authority the method promises never to gain.
+     *
+     * @return true for {@link #READONLY_STATE} and {@link #TRANSITIVE_STATE}
+     */
+    public boolean restrictsNarrowingCasts() {
+        return this == READONLY_STATE || this == TRANSITIVE_STATE;
+    }
+
+    /**
      * Returns true if a method in this mode may call a method in {@code callee}'s mode. The
      * callee's mode must be at least as strong as the caller's. {@link #TRANSITIVE_STATE} is the
      * strongest, and {@link #READONLY_STATE} and {@link #CONCRETE_STATE} each refine {@link

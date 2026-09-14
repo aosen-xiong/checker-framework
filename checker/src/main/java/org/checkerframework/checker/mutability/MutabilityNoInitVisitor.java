@@ -13,6 +13,7 @@ import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewArrayTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.UnaryTree;
 import com.sun.source.tree.VariableTree;
 
@@ -84,6 +85,9 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
      */
     private static final @CompilerMessageKey String MODE_SIGNATURE_MUTABLE =
             "method.mode.signature.mutable";
+
+    /** Error key for a qualifier-narrowing cast in a readonly-state or transitive-state method. */
+    private static final @CompilerMessageKey String MODE_CAST_INVALID = "method.mode.cast.invalid";
 
     /** Error key for a call to a method whose mode is not at least as strong as the caller's. */
     private static final @CompilerMessageKey String MODE_CALL_INVALID = "method.mode.call.invalid";
@@ -666,6 +670,34 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
         checkLostMethodTypeParameterBounds(node);
         checkMethodModeCall(node);
         return result;
+    }
+
+    @Override
+    public Void visitTypeCast(TypeCastTree tree, Void p) {
+        Void result = super.visitTypeCast(tree, p);
+        checkMethodModeCast(tree);
+        return result;
+    }
+
+    /**
+     * Reports a cast that narrows the mutability qualifier inside a readonly-state or
+     * transitive-state method body. Such a cast could recover mutable authority, for example a
+     * {@code @Readonly} reference to a class declared {@code @Mutable} cast back to
+     * {@code @Mutable}. A cast that moves up the qualifier order is allowed in every mode. Only the
+     * head qualifier is compared.
+     *
+     * @param tree the cast to check
+     */
+    private void checkMethodModeCast(TypeCastTree tree) {
+        MethodMode mode = atypeFactory.getMethodModeOf(tree);
+        if (!mode.restrictsNarrowingCasts()) {
+            return;
+        }
+        AnnotatedTypeMirror castType = atypeFactory.getAnnotatedType(tree);
+        AnnotatedTypeMirror exprType = atypeFactory.getAnnotatedType(tree.getExpression());
+        if (!typeHierarchy.isSubtypeShallowEffective(exprType, castType)) {
+            checker.reportError(tree, MODE_CAST_INVALID, mode, exprType, castType);
+        }
     }
 
     /**
