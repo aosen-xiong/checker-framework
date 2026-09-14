@@ -10,6 +10,7 @@ import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.VariableTree;
+import com.sun.source.util.TreePath;
 
 import org.checkerframework.checker.initialization.InitializationFieldAccessTreeAnnotator;
 import org.checkerframework.checker.mutability.qual.Assignable;
@@ -31,6 +32,7 @@ import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedTypeVari
 import org.checkerframework.framework.type.AnnotatedTypeParameterBounds;
 import org.checkerframework.framework.type.GenericAnnotatedTypeFactory;
 import org.checkerframework.framework.type.SyntheticArrays;
+import org.checkerframework.framework.type.TypeHierarchy;
 import org.checkerframework.framework.type.ViewpointAdapter;
 import org.checkerframework.framework.type.treeannotator.ListTreeAnnotator;
 import org.checkerframework.framework.type.treeannotator.LiteralTreeAnnotator;
@@ -49,9 +51,12 @@ import org.checkerframework.javacutil.TreeUtils;
 import org.checkerframework.javacutil.TypesUtils;
 
 import java.lang.annotation.Annotation;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Deque;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -59,6 +64,7 @@ import java.util.Set;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
@@ -99,6 +105,22 @@ public class MutabilityNoInitAnnotatedTypeFactory
     protected final AnnotationMirror BOTTOM =
             AnnotationBuilder.fromClass(elements, MutabilityBottom.class);
 
+    /** Tree kinds that bound a method mode: a method, or a class that nests one. */
+    private static final Set<Tree.Kind> MODE_BOUNDARY_KINDS;
+
+    static {
+        Set<Tree.Kind> kinds = EnumSet.of(Tree.Kind.METHOD);
+        kinds.addAll(TreeUtils.classTreeKinds());
+        MODE_BOUNDARY_KINDS = Collections.unmodifiableSet(kinds);
+    }
+
+    /**
+     * The modes of the trees currently being typed, innermost first. Every entry point that can
+     * viewpoint-adapt a member pushes the mode of the tree it was given, so adaptation reads the
+     * mode of the method whose body contains that tree.
+     */
+    private final Deque<MethodMode> methodModeStack = new ArrayDeque<>();
+
     /**
      * Create a new MutabilityNoInitAnnotatedTypeFactory.
      *
@@ -127,6 +149,25 @@ public class MutabilityNoInitAnnotatedTypeFactory
     @Override
     protected ViewpointAdapter createViewpointAdapter() {
         return new MutabilityViewpointAdapter(this);
+    }
+
+    @Override
+    protected TypeHierarchy createTypeHierarchy() {
+        return new MutabilityTypeHierarchy(
+                checker,
+                getQualifierHierarchy(),
+                ignoreRawTypeArguments,
+                checker.hasOption("invariantArrays"),
+                this);
+    }
+
+    /**
+     * Returns the mutability viewpoint adapter.
+     *
+     * @return the viewpoint adapter, typed
+     */
+    public MutabilityViewpointAdapter getMutabilityViewpointAdapter() {
+        return (MutabilityViewpointAdapter) viewpointAdapter;
     }
 
     /** Annotators are executed by the added order. Same for Type Annotator */
@@ -182,16 +223,150 @@ public class MutabilityNoInitAnnotatedTypeFactory
         }
     }
 
+    /**
+     * Returns the mode annotations written on {@code method}, in {@link MethodMode} order. A
+     * well-formed method has at most one.
+     *
+     * @param method a method
+     * @return the modes declared on {@code method}; empty if none
+     */
+    public List<MethodMode> getDeclaredMethodModes(ExecutableElement method) {
+        List<MethodMode> modes = new ArrayList<>(1);
+        for (MethodMode mode : MethodMode.values()) {
+            if (getDeclAnnotation(method, mode.annotation) != null) {
+                modes.add(mode);
+            }
+        }
+        return modes;
+    }
+
+    /**
+     * Returns the mode {@code method} is checked in: its single declared mode, or {@link
+     * MethodMode#ABSTRACT_STATE} if it declares none. A method that declares more than one mode is
+     * reported by the visitor and checked in {@link MethodMode#ABSTRACT_STATE}.
+     *
+     * @param method a method
+     * @return the mode {@code method} is checked in
+     */
+    public MethodMode getMethodMode(ExecutableElement method) {
+        List<MethodMode> modes = getDeclaredMethodModes(method);
+        return modes.size() == 1 ? modes.get(0) : MethodMode.ABSTRACT_STATE;
+    }
+
+    /**
+     * Returns the mode of the method whose body contains {@code tree}. Lambda bodies take the mode
+     * of their enclosing method. A tree outside any method, such as a field initializer, or a tree
+     * in a class nested inside a method but outside that class's own methods, is in {@link
+     * MethodMode#ABSTRACT_STATE}.
+     *
+     * @param tree a tree in the current compilation unit
+     * @return the mode {@code tree} is checked in
+     */
+    MethodMode getMethodModeOf(Tree tree) {
+        TreePath path = getPath(tree);
+        if (path == null) {
+            return MethodMode.ABSTRACT_STATE;
+        }
+        Tree boundary = TreePathUtil.enclosingOfKind(path, MODE_BOUNDARY_KINDS);
+        if (!(boundary instanceof MethodTree)) {
+            return MethodMode.ABSTRACT_STATE;
+        }
+        ExecutableElement method = TreeUtils.elementFromDeclaration((MethodTree) boundary);
+        return method == null ? MethodMode.ABSTRACT_STATE : getMethodMode(method);
+    }
+
+    /**
+     * Returns the mode viewpoint adaptation is currently performed in: the mode of the innermost
+     * tree being typed, or {@link MethodMode#ABSTRACT_STATE} outside any tree.
+     *
+     * @return the current method mode
+     */
+    public MethodMode getCurrentMethodMode() {
+        MethodMode mode = methodModeStack.peek();
+        return mode == null ? MethodMode.ABSTRACT_STATE : mode;
+    }
+
+    @Override
+    public AnnotatedTypeMirror getAnnotatedType(Tree tree) {
+        methodModeStack.push(getMethodModeOf(tree));
+        try {
+            return super.getAnnotatedType(tree);
+        } finally {
+            methodModeStack.pop();
+        }
+    }
+
+    @Override
+    protected ParameterizedExecutableType methodFromUse(
+            MethodInvocationTree tree, boolean inferTypeArgs) {
+        methodModeStack.push(getMethodModeOf(tree));
+        try {
+            return super.methodFromUse(tree, inferTypeArgs);
+        } finally {
+            methodModeStack.pop();
+        }
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The cache is keyed on the method and receiver only, so it is safe only while the adapted
+     * method type does not depend on the caller's mode. {@link MethodMode#ABSTRACT_STATE} and
+     * {@link MethodMode#CONCRETE_STATE} share one value adaptation and may use it; {@link
+     * MethodMode#READONLY_STATE} and {@link MethodMode#TRANSITIVE_STATE} callers neither read nor
+     * write it.
+     */
+    @Override
+    protected boolean shouldCacheMethodAsMemberOf() {
+        return !getCurrentMethodMode().changesValueAdaptation();
+    }
+
     @Override
     protected ParameterizedExecutableType constructorFromUse(
             NewClassTree tree, boolean inferTypeArgs) {
+        methodModeStack.push(getMethodModeOf(tree));
+        try {
+            return constructorFromUseInMode(tree, inferTypeArgs);
+        } finally {
+            methodModeStack.pop();
+        }
+    }
+
+    /**
+     * The mutability-specific part of {@link #constructorFromUse(NewClassTree, boolean)}, run with
+     * the creation expression's mode pushed.
+     *
+     * @param tree the creation expression
+     * @param inferTypeArgs whether to infer type arguments
+     * @return the constructor type for {@code tree}
+     */
+    private ParameterizedExecutableType constructorFromUseInMode(
+            NewClassTree tree, boolean inferTypeArgs) {
         ParameterizedExecutableType constructorType = super.constructorFromUse(tree, inferTypeArgs);
         AnnotatedExecutableType constructor = constructorType.executableType;
-        // For object creation, if the constructor return type is @RDM and there is no explicit
-        // annotation on the new expression, use the default concrete creation qualifier.
-        if (getExplicitNewClassAnnos(tree).isEmpty()
-                && constructor.getReturnType().hasAnnotation(RECEIVER_DEPENDENT_MUTABLE)) {
-            constructor.getReturnType().replaceAnnotation(MUTABLE);
+        if (getExplicitNewClassAnnos(tree).isEmpty()) {
+            // An anonymous class carries no declaration of its own, so its bound falls back to the
+            // flat default rather than the bound of the type it extends or implements. That yields
+            // @Readonly for an @Immutable supertype and @Mutable for a @ReceiverDependentMutable
+            // one, neither of which describes a freshly created object, and neither of which can be
+            // corrected at the use site: there is nowhere to write a qualifier on `new Base() {}`.
+            // Inherit the supertype's declaration bound instead.
+            if (tree.getClassBody() != null) {
+                AnnotationMirror superBound =
+                        getQualifierHierarchy()
+                                .findAnnotationInSameHierarchy(
+                                        getTypeDeclarationBounds(
+                                                TreeUtils.typeOf(tree.getIdentifier())),
+                                        READONLY);
+                if (superBound != null) {
+                    constructor.getReturnType().replaceAnnotation(superBound);
+                }
+            }
+            // For object creation, if the constructor return type is @RDM, use the default
+            // concrete creation qualifier.
+            if (constructor.getReturnType().hasAnnotation(RECEIVER_DEPENDENT_MUTABLE)) {
+                constructor.getReturnType().replaceAnnotation(MUTABLE);
+            }
         }
         return constructorType;
     }
