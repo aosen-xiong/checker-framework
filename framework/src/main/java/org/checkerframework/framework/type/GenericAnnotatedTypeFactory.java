@@ -451,6 +451,15 @@ public abstract class GenericAnnotatedTypeFactory<
     }
 
     /**
+     * Returns the {@link QualifierDefaults} this factory applies.
+     *
+     * @return the {@link QualifierDefaults} this factory applies
+     */
+    public QualifierDefaults getQualifierDefaults() {
+        return defaults;
+    }
+
+    /**
      * Performs flow-sensitive type refinement on {@code classTree} if this type factory is
      * configured to do so.
      *
@@ -633,6 +642,16 @@ public abstract class GenericAnnotatedTypeFactory<
      */
     protected DefaultQualifierForUseTypeAnnotator createDefaultForUseTypeAnnotator() {
         return new DefaultQualifierForUseTypeAnnotator(this);
+    }
+
+    @Override
+    protected AnnotationMirrorSet getDefaultAnnosForUses(Element element) {
+        // The annotator is created in postInit, so it is null while the type factory is still
+        // being constructed; a type queried that early has no default-for-use qualifiers yet.
+        if (defaultQualifierForUseTypeAnnotator != null) {
+            return defaultQualifierForUseTypeAnnotator.getDefaultAnnosForUses(element);
+        }
+        return AnnotationMirrorSet.emptySet();
     }
 
     /**
@@ -883,7 +902,8 @@ public abstract class GenericAnnotatedTypeFactory<
     }
 
     /**
-     * Adds standard unchecked defaults that do not conflict with previously added defaults.
+     * Adds the defaults for unchecked code of each mode the command-line options enable. Subclasses
+     * may override this method to customize unchecked-code defaults.
      *
      * @param defs {@link QualifierDefaults} object to which defaults are added
      */
