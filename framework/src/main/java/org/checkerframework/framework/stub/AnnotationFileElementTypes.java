@@ -20,11 +20,11 @@ import org.checkerframework.javacutil.AnnotationBuilder;
 import org.checkerframework.javacutil.AnnotationMirrorSet;
 import org.checkerframework.javacutil.BugInCF;
 import org.checkerframework.javacutil.ElementUtils;
+import org.checkerframework.javacutil.Pair;
 import org.checkerframework.javacutil.SystemUtil;
 import org.checkerframework.javacutil.TypesUtils;
 import org.checkerframework.javacutil.UserError;
 import org.plumelib.util.CollectionsPlume;
-import org.plumelib.util.IPair;
 import org.plumelib.util.SystemPlume;
 
 import java.io.BufferedInputStream;
@@ -32,7 +32,6 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -813,7 +812,7 @@ public class AnnotationFileElementTypes {
         if (!bundleFile.isFile() || !looksLikeBundle(bundleFile)) {
             return null;
         }
-        try (InputStream in = new FileInputStream(bundleFile)) {
+        try (InputStream in = Files.newInputStream(bundleFile.toPath())) {
             return new BinaryStubBundle(in);
         } catch (IOException e) {
             noteCouldNotRead(bundleFile.toString(), "per-file binary stubs or text parsing", e);
@@ -868,7 +867,7 @@ public class AnnotationFileElementTypes {
      * @return true if {@code file} looks like a binary stub bundle
      */
     private static boolean looksLikeBundle(File file) {
-        try (DataInputStream in = new DataInputStream(new FileInputStream(file))) {
+        try (DataInputStream in = new DataInputStream(Files.newInputStream(file.toPath()))) {
             return in.readInt() == BinaryStubBundle.MAGIC;
         } catch (IOException e) {
             return false;
@@ -1343,7 +1342,7 @@ public class AnnotationFileElementTypes {
         if (sibling == null) {
             return null;
         }
-        try (InputStream in = new FileInputStream(sibling)) {
+        try (InputStream in = Files.newInputStream(sibling.toPath())) {
             return freshBinaryStub(
                     BinaryStubData.read(in), sourceBytes, sibling.getPath(), astubFile.getPath());
         } catch (IOException e) {
@@ -1665,7 +1664,7 @@ public class AnnotationFileElementTypes {
         SourceChecker checker = atypeFactory.getChecker();
         ProcessingEnvironment processingEnv = atypeFactory.getProcessingEnv();
         ++parsingCount;
-        try (InputStream in = new FileInputStream(ajavaPath)) {
+        try (InputStream in = Files.newInputStream(Paths.get(ajavaPath))) {
             if (stubDebug) {
                 AnnotationFileParser.stubDebugStatic(
                         processingEnv,
@@ -2046,7 +2045,7 @@ public class AnnotationFileElementTypes {
 
         // This is a list of pairs of (where defined, method type) for fake overrides.  The second
         // element of each pair is currently always an AnnotatedExecutableType.
-        List<IPair<TypeMirror, AnnotatedTypeMirror>> candidates =
+        List<Pair<TypeMirror, AnnotatedTypeMirror>> candidates =
                 annotationFileAnnos.fakeOverrides.get(method);
 
         if (candidates == null || candidates.isEmpty()) {
@@ -2058,7 +2057,7 @@ public class AnnotationFileElementTypes {
         // A list of fake receiver types.
         List<TypeMirror> applicableClasses = new ArrayList<>();
         List<TypeMirror> applicableInterfaces = new ArrayList<>();
-        for (IPair<TypeMirror, AnnotatedTypeMirror> candidatePair : candidates) {
+        for (Pair<TypeMirror, AnnotatedTypeMirror> candidatePair : candidates) {
             TypeMirror fakeLocation = candidatePair.first;
             AnnotatedExecutableType candidate = (AnnotatedExecutableType) candidatePair.second;
             if (atypeFactory.types.isSameType(receiverTypeMirror, fakeLocation)) {
@@ -2105,7 +2104,7 @@ public class AnnotationFileElementTypes {
             throw new BugInCF(message.toString());
         }
 
-        for (IPair<TypeMirror, AnnotatedTypeMirror> candidatePair : candidates) {
+        for (Pair<TypeMirror, AnnotatedTypeMirror> candidatePair : candidates) {
             TypeMirror candidateReceiverType = candidatePair.first;
             if (atypeFactory.types.isSameType(fakeReceiverType, candidateReceiverType)) {
                 return refreshFakeOverride(method, (AnnotatedExecutableType) candidatePair.second);
@@ -2454,7 +2453,7 @@ public class AnnotationFileElementTypes {
      */
     private void parseJdkStubFile(Path path) {
         ++parsingCount;
-        try (FileInputStream jdkStub = new FileInputStream(path.toFile())) {
+        try (InputStream jdkStub = Files.newInputStream(path)) {
             AnnotationFileParser.parseJdkFileAsStub(
                     path.toFile().getName(),
                     jdkStub,
@@ -2863,7 +2862,7 @@ public class AnnotationFileElementTypes {
             AnnotationFileAnnotations target) {
         Path path = pathsByItem.get(name);
         if (path != null) {
-            try (InputStream in = new FileInputStream(path.toFile())) {
+            try (InputStream in = Files.newInputStream(path)) {
                 parseJdkStreamInto(path.toFile().getName(), in, target);
             } catch (IOException e) {
                 throw new BugInCF("cannot open the jdk stub file " + path, e);

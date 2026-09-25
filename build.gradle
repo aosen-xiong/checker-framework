@@ -21,7 +21,8 @@ plugins {
     // Code formatting; defines targets "spotlessApply" and "spotlessCheck".
     // https://github.com/diffplug/spotless/tags ; see tags starting "gradle/"
     // Only works on JDK 11+ (even including the plugin crashes Gradle on JDK 8).
-    id 'com.diffplug.spotless' version '8.10.1'
+    id 'com.diffplug.spotless' version '8.10.2'
+    id 'io.github.andygoossens.modernizer' version '2.0.0' apply false
 }
 
 // There is another `repositories { ... }` block below; if you change this one, change that one as well.
@@ -103,19 +104,10 @@ ext {
 
 // Keep in sync with check in
 // framework/src/main/java/org/checkerframework/framework/source/SourceChecker.java .
-switch (JavaVersion.current()) {
-    case JavaVersion.VERSION_1_8:
-    case JavaVersion.VERSION_11:
-    case JavaVersion.VERSION_17:
-    case JavaVersion.VERSION_21:
-    case JavaVersion.VERSION_25:
-    case JavaVersion.VERSION_26:
-    case JavaVersion.VERSION_27:
-        break; // Supported versions
-    default:
-        logger.info('The Checker Framework is tested with JDK 8, 11, 17, 21, 25, 26, and 27-EA.' +
-        ' You are using JDK ' + JavaVersion.current().majorVersion + '.');
-        break;
+List<Integer> supportedJres = [8, 11, 17, 21, 25, 27, 28]
+if (!supportedJres.contains(currentRuntimeJavaVersion)) {
+    String supportedList = supportedJres[0..-2].join(', ') + ', and ' + supportedJres[-1] + '-EA'
+    logger.info("The Checker Framework is tested with JDK ${supportedList}. You are using JDK ${currentRuntimeJavaVersion}.")
 }
 
 // Git hooks are installed into the main worktree's .git directory.  'git worktree list' prints
@@ -173,14 +165,14 @@ allprojects { currentProj ->
     //   * backward-incompatible changes have been made to APIs or elsewhere.
     // To make a snapshot release, version should end in "-SNAPSHOT", then: ./gradlew publish
     version = '3.49.5-eisop2-SNAPSHOT'
+    group = 'io.github.eisop'
 
     apply plugin: 'java'
     apply plugin: 'eclipse'
     apply plugin: 'com.gradleup.shadow'
     apply plugin: 'de.undercouch.download'
     apply plugin: 'net.ltgt.errorprone'
-
-    group = 'io.github.eisop'
+    apply plugin: 'io.github.andygoossens.modernizer'
 
     java {
         // Using `options.release.set(8)` here leads to compilation
@@ -243,6 +235,12 @@ allprojects { currentProj ->
     eclipse.classpath {
         defaultOutputDir = file("build/default")
         file.whenMerged { cp ->
+            // Remove bare 'src/main' source folder entries that cause Eclipse nesting errors.
+            // See https://github.com/eisop/checker-framework/issues/2130 for a permanent cleanup.
+            cp.entries.removeAll { e ->
+                e instanceof org.gradle.plugins.ide.eclipse.model.SourceFolder && e.path == 'src/main'
+            }
+
             cp.entries.forEach { cpe ->
                 if (cpe instanceof org.gradle.plugins.ide.eclipse.model.SourceFolder) {
                     cpe.output = cpe.output.replace "bin/", "build/classes/java/"
@@ -468,6 +466,22 @@ allprojects { currentProj ->
             checkerFatJar(project(path: ':checker', configuration: 'fatJar'))
         }
 
+        modernizer {
+            failOnViolations = true
+            includeTestClasses = true
+            javaVersion = 8
+            exclusionPatterns = [
+                // StringTokenizer is used in parsers (e.g., TreeParser, StubGenerator) with returnDelims=true,
+                // where String.split/Scanner is not a drop-in replacement.
+                '.*StringTokenizer.*',
+                // Many internal and external APIs (including javac) require File instances. Converting
+                // Paths.get(...).toFile() is verbose and artificial (and Path.of is Java 11+).
+                'java/io/File\\."<init>".*',
+                // Files.createTempFile requires Path and does not directly support nullable directory arguments;
+                // converting via .toFile() adds awkward boilerplate across test harnesses.
+                'java/io/File\\.createTempFile.*',
+            ]
+        }
         // Add the fat checker.jar to the classpath of every Javadoc task. This allows Javadoc in
         // any module to reference classes in any other module.
         // Also, build and use ManualTaglet as a taglet.
@@ -1152,6 +1166,17 @@ subprojects {
             args(binaryStubFilesDir.get().asFile.absolutePath,
                     file('src/main/java').absolutePath,
                     file('src/main/resources').absolutePath)
+
+            // The generator only writes binary stubs; it never removes one. Gradle does not
+            // clean a task's output directory either, so after an .astub file is renamed or
+            // deleted its .bin.gz stays behind, is packaged into the jar, and is read in
+            // preference to the text stub that no longer exists. Empty the directory first, so
+            // that what it holds is exactly what the current .astub files produce.
+            def injectedFiles = project.objects.newInstance(InjectedFileOps)
+            def staleOutputDir = binaryStubFilesDir.get().asFile
+            doFirst {
+                injectedFiles.fs.delete { delete(staleOutputDir) }
+            }
         }
         sourceSets.main.resources.srcDir(binaryStubFilesDir)
         tasks.named('processResources').configure { dependsOn 'generateBinaryStubFiles' }
@@ -1310,7 +1335,7 @@ subprojects {
                 [
                     // to avoid having to annotate JavaParser
                     '-AassumePureGetters',
-                    '-AassumeAssertionsAreEnabled',
+                    '-AassumeAssertions=enabled',
                 ])
         rootProject.createCheckTypeTask(project.name,'Purity',
                 'org.checkerframework.framework.util.PurityChecker')
@@ -1374,12 +1399,22 @@ subprojects {
                     // Required for checker/jtreg/nullness/PersistUtil.java and other tests
                     "-vmoptions:-classpath ${tasks.shadowJar.archiveFile.get()}:${sourceSets.test.output.asPath}",
                 ]
+                // The com.sun.tools.classfile harness -- the defaultsPersist and
+                // inheritDeclAnnoPersist directories -- needs the jdk.jdeps module opened
+                // to it.  JDK 25 removed that package, and passing --add-opens for a package
+                // that does not exist makes every test VM print
+                // "WARNING: package com.sun.tools.classfile not in jdk.jdeps".  Those tests are
+                // themselves guarded by "@requires jdk.version.major <= 24", and the
+                // java.lang.classfile harness that replaces them on 25+ needs no such flag, so
+                // pass these only where they apply.
+                if (useJdkVersionInt <= 24) {
+                    args += [
+                        '-javacoptions:--add-modules jdk.jdeps',
+                        '-javacoptions:--add-exports=jdk.jdeps/com.sun.tools.classfile=ALL-UNNAMED',
+                        '-vmoptions:--add-opens=jdk.jdeps/com.sun.tools.classfile=ALL-UNNAMED',
+                    ]
+                }
                 args += [
-                    // checker/jtreg/nullness/defaultsPersist/ReferenceInfoUtil.java
-                    // uses the jdk.jdeps module.
-                    '-javacoptions:--add-modules jdk.jdeps',
-                    '-javacoptions:--add-exports=jdk.jdeps/com.sun.tools.classfile=ALL-UNNAMED',
-                    '-vmoptions:--add-opens=jdk.jdeps/com.sun.tools.classfile=ALL-UNNAMED',
                     '-vmoptions:--add-opens=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED',
                     '-vmoptions:--add-opens=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED',
                     '-vmoptions:--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED',
@@ -1481,6 +1516,13 @@ subprojects {
             // checker runs in-process in the test JVM (TypecheckExecutor uses ToolProvider), so this
             // system property reaches it.
             systemProperties += ['cf.typeinference.worklist.strict': 'true']
+
+            // AnnotatedTypeFactory#annotateCapturedTypeVar recomputes the captured type variable's
+            // upper bound in javac's own argument order when the framework's own order disagrees
+            // with javac's bound (see eisop#2034). In production it silently keeps that recomputed
+            // bound even if it still does not match javac's bound. Run this project's own tests in
+            // strict mode instead, so a remaining mismatch is a loud CI failure.
+            systemProperties += ['cf.captureconversion.strict': 'true']
 
             // Always re-run tests.  This must live at the test task level.
             outputs.upToDateWhen { false }
@@ -1737,6 +1779,10 @@ final createCheckRelocatedStringsTask(Project project, List jarTasks) {
         }
     }
 }
+
+// Helper task to ensure no relocated shadowed types leak into public/protected API of shaded jars
+apply from: rootProject.file('gradle/check-public-api.gradle')
+
 
 /**
  * Registers a task that fails if a task configuration closure configures project-wide state.

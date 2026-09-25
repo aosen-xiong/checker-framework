@@ -53,6 +53,12 @@ git diff --exit-code docs/manual/contributors.tex \
 # Check gradle tasks are configured properly
 ./gradlew tasks
 
+# Check Eclipse and IDE project configuration generation
+./gradlew cleanEclipse eclipse --console=plain --warning-mode=all
+
+# Check that modern APIs are used
+./gradlew modernizer
+
 # Check subproject clean and build with configuration cache
 ./gradlew :dataflow:clean :dataflow:build --console=plain --warning-mode=all
 

@@ -48,6 +48,7 @@ import org.checkerframework.common.basetype.BaseTypeValidator;
 import org.checkerframework.common.basetype.BaseTypeVisitor;
 import org.checkerframework.common.basetype.TypeValidator;
 import org.checkerframework.framework.flow.CFCFGBuilder;
+import org.checkerframework.framework.source.AssumeAssertions;
 import org.checkerframework.framework.source.DiagMessage;
 import org.checkerframework.framework.source.SuggestedFixData;
 import org.checkerframework.framework.type.AnnotatedTypeFactory;
@@ -130,11 +131,8 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
     /** True if checked code may clear system properties. */
     private final boolean permitClearProperty;
 
-    /** True if -AassumeAssertionsAreEnabled was passed on the command line. */
-    private final boolean assumeAssertionsAreEnabled;
-
-    /** True if -AassumeAssertionsAreDisabled was passed on the command line. */
-    private final boolean assumeAssertionsAreDisabled;
+    /** What to assume about whether assertions are enabled, from {@code -AassumeAssertions}. */
+    private final AssumeAssertions assumeAssertions;
 
     /** True if -Alint=redundantNullComparison was passed on the command line. */
     private final boolean redundantNullComparison;
@@ -180,8 +178,7 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
                 checker.getLintOption(
                         NullnessChecker.LINT_PERMITCLEARPROPERTY,
                         NullnessChecker.LINT_DEFAULT_PERMITCLEARPROPERTY);
-        assumeAssertionsAreEnabled = checker.hasOption("assumeAssertionsAreEnabled");
-        assumeAssertionsAreDisabled = checker.hasOption("assumeAssertionsAreDisabled");
+        assumeAssertions = checker.getAssumeAssertions();
         redundantNullComparison =
                 checker.getLintOption(
                         NullnessChecker.LINT_REDUNDANTNULLCOMPARISON,
@@ -511,11 +508,13 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
 
     @Override
     public Void visitMemberReference(MemberReferenceTree tree, Void p) {
-        checkJSpecifyLocation(
-                tree,
-                null,
-                tree.getQualifierExpression(),
-                "jspecify.unrecognized.location.methodref");
+        // Only a type qualifier, as in "@Nullable String::new", can carry an annotation; an
+        // expression qualifier, as in `"abc"::length` or `o::toString`, cannot.
+        ExpressionTree qualifier = tree.getQualifierExpression();
+        if (TreeUtils.isTypeTree(qualifier)) {
+            checkJSpecifyLocation(
+                    tree, null, qualifier, "jspecify.unrecognized.location.methodref");
+        }
         return super.visitMemberReference(tree, p);
     }
 
@@ -534,7 +533,8 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
                 || tree.getExpression() instanceof ParameterizedTypeTree
                 // case 8. static member access
                 || ElementUtils.isStatic(e))) {
-            checkForNullability(tree.getExpression(), DEREFERENCE_OF_NULLABLE);
+            AnnotatedTypeMirror type = atypeFactory.getAnnotatedType(tree.getExpression());
+            checkForNullability(type, tree, DEREFERENCE_OF_NULLABLE, tree.getExpression());
         }
 
         return super.visitMemberSelect(tree, p);
@@ -672,21 +672,13 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
         // See also
         // org.checkerframework.dataflow.cfg.builder.CFGBuilder.CFGTranslationPhaseOne.visitAssert
 
-        // In cases where neither assumeAssertionsAreEnabled nor assumeAssertionsAreDisabled are
-        // turned on and @AssumeAssertions is not used, checkForNullability is still called since
-        // the CFGBuilder will have generated one branch for which asserts are assumed to be
-        // enabled.
+        // In cases where neither assumption is made about assertions and @AssumeAssertions is not
+        // used, checkForNullability is still called since the CFGBuilder will have generated one
+        // branch for which asserts are assumed to be enabled.
 
-        boolean doVisitAssert;
-        if (assumeAssertionsAreEnabled
-                || CFCFGBuilder.assumeAssertionsActivatedForAssertTree(checker, tree)) {
-            doVisitAssert = true;
-        } else if (assumeAssertionsAreDisabled) {
-            doVisitAssert = false;
-        } else {
-            // no option given -> visit
-            doVisitAssert = true;
-        }
+        boolean doVisitAssert =
+                assumeAssertions != AssumeAssertions.DISABLED
+                        || CFCFGBuilder.assumeAssertionsActivatedForAssertTree(checker, tree);
 
         if (doVisitAssert) {
             checkForNullability(tree.getCondition(), CONDITION_NULLABLE);
@@ -745,6 +737,7 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
 
         if (patternTree != null) {
             checkJSpecifyLocation(tree, nestedAnnos, "jspecify.unrecognized.location.pattern");
+            return super.visitInstanceOf(tree, p);
         } else {
             for (AnnotationMirror am : nestedAnnos) {
                 if (atypeFactory.isNullnessAnnotation(am)) {
@@ -752,9 +745,19 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
                     break;
                 }
             }
+            // Don't call super for non-pattern instanceof because it will issue an incorrect
+            // instanceof.unsafe warning when testing a @Nullable expression against a @NonNull
+            // type.
+            return null;
         }
-        // Don't call super because it will issue an incorrect instanceof.unsafe warning.
-        return null;
+    }
+
+    @Override
+    protected boolean isInstanceOfPatternSafe(
+            AnnotatedTypeMirror variableType, AnnotatedTypeMirror expType) {
+        AnnotatedTypeMirror expTypeNonNull = expType.deepCopy();
+        expTypeNonNull.replaceAnnotation(NONNULL);
+        return isTypeCastSafe(variableType, expTypeNonNull);
     }
 
     /**
@@ -1110,8 +1113,22 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
      */
     private boolean checkForNullability(
             AnnotatedTypeMirror type, Tree tree, @CompilerMessageKey String errMsg) {
+        return checkForNullability(type, tree, errMsg, tree);
+    }
+
+    /**
+     * Issues the error message if an expression with this type may be null.
+     *
+     * @param type annotated type
+     * @param tree the tree where the error is to reported
+     * @param errMsg the error message (must be {@link CompilerMessageKey})
+     * @param errTree the tree to be used in the error message
+     * @return whether or not the check succeeded
+     */
+    private boolean checkForNullability(
+            AnnotatedTypeMirror type, Tree tree, @CompilerMessageKey String errMsg, Tree errTree) {
         if (!type.hasEffectiveAnnotation(NONNULL)) {
-            checker.reportError(tree, errMsg, tree);
+            checker.reportError(tree, errMsg, errTree);
             return false;
         }
         return true;
@@ -1119,7 +1136,9 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
 
     @Override
     protected void checkMethodInvocability(
-            AnnotatedExecutableType method, MethodInvocationTree tree) {
+            AnnotatedExecutableType method,
+            MethodInvocationTree tree,
+            @Nullable AnnotatedTypeMirror receiverType) {
         AnnotatedTypeMirror methodReceiverType = method.getReceiverType();
         if (methodReceiverType == null) {
             // Static methods don't have a receiver to check.
@@ -1129,7 +1148,8 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
         if (!TreeUtils.isSelfAccess(tree)) {
             // TODO: should all or some constructors be excluded?
             // method.getElement().getKind() != ElementKind.CONSTRUCTOR) {
-            AnnotatedTypeMirror rcv = atypeFactory.getReceiverType(tree);
+            AnnotatedTypeMirror rcv =
+                    receiverType != null ? receiverType : atypeFactory.getReceiverType(tree);
             AnnotationMirrorSet receiverAnnos = rcv.getAnnotations();
             AnnotatedTypeMirror methodReceiver = methodReceiverType.getErased();
             AnnotatedTypeMirror treeReceiver = methodReceiver.shallowCopy(false);
@@ -1142,7 +1162,7 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
                 return;
             }
         }
-        super.checkMethodInvocability(method, tree);
+        super.checkMethodInvocability(method, tree, receiverType);
     }
 
     /**
@@ -1250,7 +1270,8 @@ public class NullnessNoInitVisitor extends BaseTypeVisitor<NullnessNoInitAnnotat
     public Void visitNewClass(NewClassTree tree, Void p) {
         ExpressionTree enclosingExpr = tree.getEnclosingExpression();
         if (enclosingExpr != null) {
-            checkForNullability(enclosingExpr, DEREFERENCE_OF_NULLABLE);
+            AnnotatedTypeMirror type = atypeFactory.getAnnotatedType(enclosingExpr);
+            checkForNullability(type, tree, DEREFERENCE_OF_NULLABLE, enclosingExpr);
         }
 
         AnnotatedTypeMirror.AnnotatedDeclaredType type = atypeFactory.getAnnotatedType(tree);

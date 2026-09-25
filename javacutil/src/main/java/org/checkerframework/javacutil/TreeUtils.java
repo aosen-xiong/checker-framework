@@ -2301,6 +2301,38 @@ public final class TreeUtils {
         return false;
     }
 
+    /**
+     * Determine whether an expression {@link ExpressionTree} has the constant value false,
+     * according to the compiler logic.
+     *
+     * @param tree the expression to be checked
+     * @return true if {@code tree} has the constant value false
+     */
+    public static boolean isExprConstFalse(ExpressionTree tree) {
+        assert tree instanceof JCExpression;
+        if (((JCExpression) tree).type.isFalse()) {
+            return true;
+        }
+        tree = TreeUtils.withoutParens(tree);
+        if (tree instanceof JCTree.JCBinary) {
+            JCBinary binTree = (JCBinary) tree;
+            JCExpression ltree = binTree.lhs;
+            JCExpression rtree = binTree.rhs;
+            switch (binTree.getTag()) {
+                case AND:
+                    // Short-circuit evaluation: `A && B` is always false if either operand is
+                    // always false, regardless of the other operand's value.
+                    return isExprConstFalse(ltree) || isExprConstFalse(rtree);
+                case OR:
+                    // `A || B` is always false only if both operands are always false.
+                    return isExprConstFalse(ltree) && isExprConstFalse(rtree);
+                default:
+                    break;
+            }
+        }
+        return false;
+    }
+
     /** Pattern matching one or more whitespace characters; used by {@link #toStringOneLine}. */
     private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
 
@@ -2452,8 +2484,18 @@ public final class TreeUtils {
                     List<? extends Tree> alternatives =
                             ((UnionTypeTree) typeTree).getTypeAlternatives();
                     List<AnnotationTree> unionResult = new ArrayList<>(alternatives.size());
-                    for (Tree alternative : alternatives) {
-                        unionResult.addAll(getExplicitAnnotationTrees(null, alternative));
+                    // Only the first alternative gets annoTrees. In a multi-catch, javac attaches
+                    // an annotation written before the first alternative to the catch parameter's
+                    // modifiers -- which is what annoTrees holds -- and leaves that alternative a
+                    // bare identifier, so passing null here would drop it. An annotation on any
+                    // later alternative stays on that alternative's own tree, which arrives here
+                    // as an ANNOTATED_TYPE and needs nothing from annoTrees; passing annoTrees to
+                    // it as well would report the first alternative's annotation once per
+                    // alternative.
+                    for (int i = 0; i < alternatives.size(); i++) {
+                        unionResult.addAll(
+                                getExplicitAnnotationTrees(
+                                        i == 0 ? annoTrees : null, alternatives.get(i)));
                     }
                     return unionResult;
                 case INTERSECTION_TYPE:

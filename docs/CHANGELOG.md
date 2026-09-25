@@ -3,12 +3,173 @@ Version 3.49.5-eisop2 (June ?, 2026)
 
 **User-visible changes:**
 
+The new command-line option `-AusePermissiveDefaultsForUncheckedCode` takes `source` and/or
+`bytecode` arguments, like `-AuseConservativeDefaultsForUncheckedCode`, but applies permissive
+defaults to code outside the scope of an `@AnnotatedFor`: top for method parameters and upper
+bounds, bottom for method returns, fields, and lower bounds.  It also suppresses type-checking
+warnings in unannotated source code, like `-AuseConservativeDefaultsForUncheckedCode=source`.
+A given kind of code cannot be defaulted both permissively and conservatively.
+
+Specifying a location in `@DefaultQualifier` that is prohibited by the qualifier's
+`@TargetLocations` meta-annotation is now reported as a compiler error
+(`default.qualifier.prohibited.location`). Previously, such invalid defaults were
+accepted, allowing qualifiers to be defaulted onto locations where users could not
+write them explicitly (such as defaulting bottom qualifiers onto parameters or return types).
+
+New meta-annotation `@ProgrammaticDefaultLocations` in `org.checkerframework.framework.qual`
+allows type system designers to permit qualifiers to be used as programmatic defaults
+at specific locations even when prohibited from explicit use by programmers via `@TargetLocations`.
+Top and bottom qualifiers in a qualifier hierarchy are permitted as programmatic defaults
+at all locations by default. Programmatic defaults (`addCheckedCodeDefault`,
+`addUncheckedCodeDefault`, `addElementDefault`) specifying a location prohibited by
+`@ProgrammaticDefaultLocations` or `@TargetLocations` now throw a `TypeSystemError`.
+
+A binary stub file is no longer packaged after the `.astub` file it was generated from is
+renamed or deleted.  The stale `.bin.gz` shipped in the jar and was read in preference to the
+text stub that no longer existed, so the removed annotations kept being applied.
+
+A checker that resolves a tree from `postAnalyze` no longer poisons the tree-path cache.
+`AnnotatedTypeFactory.getPath` caches a failed lookup, and `postAnalyze` ran with the visitor
+tree path of whatever the visitor last set rather than of the code being analyzed.
+
+A bad argument to a command-line option that the checker reads as it starts up is now
+reported as an ordinary compiler error.  Previously `-AwarnUnneededSuppressionsExceptions`
+without an argument, or with one that is not a regular expression, was reported as
+"An annotation processor threw an uncaught exception", followed by a stack trace.
+An error from a checker's `typeProcessingOver` is now reported the same way.
+
+A diagnostic reported on a tree that the CFG synthesized for a conversion now points at the
+construct the conversion came from, rather than at the first character of the file.
+
+The method invocations that the CFG synthesizes for boxing, unboxing, enhanced for loops and
+try-with-resources are now type-checked.  Previously a type system's declaration of
+`Integer.valueOf`, `Integer.intValue`, `Iterable.iterator` or `close` was enforced for an
+explicit call and ignored for the conversion that desugars to it, so a type system could not
+constrain which values may be converted.
+
+The Fenum Checker now preserves a fake enum across boxing and unboxing.  The wrapper classes'
+`valueOf` and `xxxValue` methods are annotated `@PolyFenum`, so a `@Fenum` value can be boxed
+and unboxed without laundering it into a different fake enum.
+
+Every continuous integration run now attaches the jars it built to the run, so
+the latest development version, or a proposed fix, can be tried out without
+building it.  See the "Development jars without building" section of the manual.
+
+The EISOP Checker Framework runs under JDK 27 and under JDK 28 b15 early access
+builds -- that is, it runs on version 27 and 28 JVMs.
+
+New command-line option `-AassumeAssertions=enabled|disabled|neither` states what to assume
+about whether assertions are enabled at run time. `neither`, the default, accounts for both
+cases, as before. It replaces `-AassumeAssertionsAreEnabled` and
+`-AassumeAssertionsAreDisabled`, which are deprecated: each is still honored, but passing one
+issues a warning that names its replacement.
+
+A checker can now examine a package declaration. `AbstractTypeProcessor` dropped the
+analysis event for a `package-info.java`, so no checker could ever visit one and a
+declaration annotation written on a `package` clause went unchecked. Three checks that
+apply to a package therefore did not run there, and now do:
+
+- A conflicting `@AnnotatedFor`/`@UnannotatedFor` pair on a package was reported only when
+  some class in that package was also compiled, because the check had to be reached
+  through one.
+- A conflicting `@DefaultQualifier` pair on a package was likewise reported only then, and
+  for the same reason: the diagnostic fell out of resolving the package's defaults, which
+  nothing does when no class in the package is compiled.
+- A conflicting `@HasQualifierParameter`/`@NoQualifierParameter` pair on a package, and a
+  `@HasQualifierParameter` whose argument is not a top qualifier, were never checked at
+  all. Both annotations' `@Target` includes `PACKAGE`.
+
+A conflicting `@DefaultQualifier` pair on an element read from bytecode is no longer an
+error. It is reported as a warning under the new `-AwarnBytecodeConflicts`, and not at all
+without it. Such a declaration is in a library the user cannot edit, and which bytecode
+elements get examined depends on what the compilation happens to touch, so the coverage was
+never complete enough to rely on.
+
+`-AcheckCastElementType` is documented as requiring that "parameterized type
+arguments and array elements are the same" in a cast, but only the type-argument
+half was implemented. Array components are now required to be invariant too, in
+array casts and in `instanceof` binding patterns. This closes an unsoundness:
+array components are mutable and their qualifiers are not reified, so a cast
+cannot check them and two differently-qualified references can alias one array,
+allowing a value to be written through one and read back at the other's
+qualifier. `instanceof` binding patterns are now checked under this option at
+all; the Nullness Checker verifies their component types and type arguments
+while accounting for the runtime null check that `instanceof` itself performs.
+
+Writing both an `@AnnotatedFor` and an `@UnannotatedFor` that name the same checker
+on one declaration is now a `conflicting.annotatedfor` warning: the two contradict
+each other, and the `@AnnotatedFor` wins.
+
+New declaration annotation `@UnannotatedFor`, which excludes a package, class,
+method, or constructor from the scope of an enclosing `@AnnotatedFor` for the given
+checkers. Its scope is defaulted using conservative defaults and its warnings are
+suppressed, as if no enclosing `@AnnotatedFor` were present; a nested
+`@AnnotatedFor` takes effect again. Like `@AnnotatedFor`, it has an
+`applyToSubpackages` element and is repeatable, and it has no effect unless
+`-AuseConservativeDefaultsForUncheckedCode=source` or `-AonlyAnnotatedFor` is
+supplied.
+
+`@AnnotatedFor` and `@UnannotatedFor` now have `RUNTIME` retention instead of
+`SOURCE` retention, so they are stored in class files and available via
+reflection at run time. Under `-AuseConservativeDefaultsForUncheckedCode=bytecode`,
+a class compiled with a relevant `@AnnotatedFor` is no longer treated as
+unchecked code, and an `@UnannotatedFor` in a dependency now excludes its
+scope. A package annotation in a `package-info.class` on the classpath now
+also applies to separately compiled subpackages, unless it sets
+`applyToSubpackages = false`. Run-time tools can read `@AnnotatedFor` to see
+which classes the authors have annotated for a type system; the annotation
+does not record whether a checker was run.
+
+A checker without a `@SuppressWarningsPrefix` annotation now accepts as a
+`@SuppressWarnings` prefix the default prefix of every checker that runs it as a
+subchecker, in addition to the prefix derived from its own class name. These are the
+checkers returned by `SourceChecker.getUpstreamCheckerNames()`, which also determines
+which `@AnnotatedFor` annotations apply to it. For example, `@SuppressWarnings("index")`
+now suppresses Constant Value Checker errors reported while running the Index Checker,
+and `@SuppressWarnings("nonempty")` now also suppresses Optional Checker errors.
+
+The Nullness Checker now also treats JSpecify's `@NullUnmarked` as the inverse of
+`@NullMarked`, in both of the ways `@NullMarked` is recognized. It undoes the
+enclosing `@NullMarked`'s `@NonNull` upper-bound default within its scope -- without
+which a type variable of a `@NullUnmarked` method was still bounded by `@NonNull`
+-- and it aliases to `@UnannotatedFor`, with the same checker name and the same
+`applyToSubpackages = false` as the `@NullMarked` aliases, so it subtracts its
+scope from an enclosing `@NullMarked` under `-AonlyAnnotatedFor` and
+`-AuseConservativeDefaultsForUncheckedCode=source`. Like `@NullMarked`, it is
+retained in class files, so this applies to bytecode too: a `@NullUnmarked`
+member of a `@NullMarked` dependency is again given conservative defaults under
+`-AuseConservativeDefaultsForUncheckedCode=bytecode`.
+
 Fixed a bug where a `@DefaultQualifier` on a package could be lost for deeper subpackages.
 This happened when an intervening package shadowed it -- set a default for the same
 location and qualifier hierarchy -- and that shadowing default did not itself apply to
 subpackages. The intervening package's own default correctly stayed limited to that
 package, but the outer default, which nothing deeper actually shadowed, incorrectly
 stopped propagating too.
+
+Two `@DefaultQualifier` annotations on the same declaration that set the same
+`TypeUseLocation` in the same qualifier hierarchy to different qualifiers are now reported
+as a `conflicting.defaults` error, and the one written later in the source is ignored.
+Previously both were kept and which one took effect depended on the order of their
+annotation class names. Two that name the same qualifier are redundant, not conflicting,
+and remain legal.
+
+An annotation that a checker registers as an alias for `@DefaultQualifier`, such as
+JSpecify's `@NullMarked` for the Nullness Checker, now participates at its own position in
+the source, alongside the `@DefaultQualifier` annotations written on the same declaration.
+Two consequences. An alias is no longer dropped when a `@DefaultQualifier` is also written
+on the declaration; previously the written annotation hid it entirely, so on
+`@NullMarked @DefaultQualifier(value = Nullable.class, locations = FIELD)` the `@NullMarked`
+default for upper bounds was silently lost. And when an alias and a written
+`@DefaultQualifier` do conflict, source order decides: whichever appears first wins, so
+reordering the two annotations changes the result. Previously the alias always won against
+two or more written `@DefaultQualifier` annotations, and always lost against one.
+
+A default that a checker registers with `QualifierDefaults.addElementDefault` now combines
+with the `@DefaultQualifier` annotations written on the same declaration and with the
+defaults of enclosing elements, instead of replacing them or being lost depending on the
+order in which defaults were first queried.
+
 
 The Nullness Checker now treats JSpecify's `@NullMarked` as an alias for
 `@AnnotatedFor` scoped to nullness checking alone (not initialization or `@KeyFor`
@@ -23,9 +184,7 @@ code under `-AuseConservativeDefaultsForUncheckedCode=bytecode`. A written
 alongside `@NullMarked` (see below). `applyToSubpackages = false` matches JSpecify,
 which specifies that a `@NullMarked` package does not cover its subpackages, and
 matches the `@DefaultQualifier` alias. As before, `-AjspecifyNullMarkedAlias=false`
-disables all `@NullMarked` aliasing, now including this new alias. `@NullUnmarked` is
-not yet honored: nested code under it is still checked as if the enclosing
-`@NullMarked` scope applied.
+disables all `@NullMarked` aliasing, now including this new alias.
 
 An `@AnnotatedFor` annotation written on an element now composes with any alias for
 `@AnnotatedFor` on that same element, rather than the written annotation hiding the alias.
@@ -52,6 +211,16 @@ A type-use annotation written on an anonymous class creation expression, as in
 `new @A AClass() {}`, is now validated against the declaration bound of the class being extended
 on Java 8 through 11 as well. Previously this was checked only on Java 12 and later, so the same
 source checked differently depending on the compiler.
+
+An unannotated anonymous class creation expression, as in `new AClass() {}`, now
+takes the declaration bound and the `@DefaultQualifierForUse` qualifiers of the class
+or interface being instantiated. Previously it was defaulted without reference to that
+supertype, which for most type systems meant the top qualifier.
+
+Relatedly, `new @A AIface() {}` no longer reports `cast.unsafe.constructor.invocation`
+when `@A` is the interface's declaration bound. An anonymous class implementing an
+interface has no declared constructor, so the warning was previously issued whether or
+not the annotation matched the bound.
 
 The Nullness Checker's new `-AjspecifyUnrecognizedLocations` command-line option (also enabled by
 `-Amode=jspecify`) reports an error for a nullness annotation written where JSpecify gives it no
@@ -105,6 +274,16 @@ form, whichever is a supported qualifier (or null if neither is);
 `canonicalAnnotationOrWritten(AnnotationMirror)`, which returns the canonical form of an
 annotation as written if it is an alias, and the annotation itself otherwise (regardless of
 whether either form is actually a supported qualifier).
+
+`AnnotatedTypeFactory#addAliasedTypeAnnotation` now validates that the canonical annotation is
+a supported qualifier of the checker and that the alias is not already in the type hierarchy,
+failing immediately with `TypeSystemError` rather than silently ignoring the alias.
+
+The `-AaliasedTypeAnnos` command-line option now reports a `UserError` if its canonical
+annotation is not a type annotation, or if its alias is itself a qualifier of the type system
+being run. A canonical qualifier that the running type system does not support is skipped
+rather than reported: the option is global, so each type factory in a checker hierarchy also
+receives the aliases written for the others.
 
 `@AnnotatedFor` is now `@Repeatable`, so it may be written more than once at the same
 location. This lets different type systems be given different `applyToSubpackages`
@@ -167,6 +346,33 @@ the inferred type variable through `? extends`, as in
 `Function<? super Set<? extends K>, ?>`.  It reported
 `type.argument.inference.crashed` on code that javac accepts.
 
+Type argument inference no longer fails on a generic call returned by a lambda that is
+itself an argument to a generic method, as in `run(() -> arr(new String[0]))`.  Finding
+the qualifiers of the new array restarted inference of `arr(...)` while it was still being
+inferred as part of `run(...)`, and that second inference used `run`'s not-yet-inferred
+type variable as its target.  With default options the failure was silently discarded;
+with `-AconvertTypeArgInferenceCrashToWarning=false`, as the test harness passes, the
+Checker Framework crashed on code that javac accepts.
+
+The Checker Framework no longer crashes with "AsSuperVisitor: type is not an erased subtype
+of supertype" when an implicitly typed lambda that is an argument to a generic method invokes
+a generic method on its parameter, as in `of(list, l -> l.toArray(new String[0]))`.
+Type argument inference computed the type of `l` before inferring the type argument that the
+type of `l` depends on, so `l` got the uninferred type variable as its type, and that type was
+cached and used after inference, too.  Depending on the code, the result was this crash, a
+spurious `lambda.param.type.incompatible` error, or a spurious
+`type.argument.inference.crashed` error.
+
+Type-argument inference now resolves the polymorphic qualifiers of a generic method invocation
+that is nested in the inference of an enclosing invocation, such as an argument or a lambda's
+returned expression.  Previously a polymorphic qualifier on the nested invocation's return type
+became part of an inferred type argument of the enclosing invocation, so for example
+`id(list.stream().map(String::length))` under the NonEmpty Checker, or a `@PolyNull` method in
+the same position under the Nullness Checker, reported a spurious `return.type.incompatible`,
+`argument.type.incompatible`, or `type.arguments.not.inferred` error.  The qualifiers are still
+not resolved when the argument that instantiates them is itself a poly expression, such as
+`id(wrap(id(o), 1))` for a method `wrap(@PolyNull Object, U)`.
+
 The stubifier resolves a nested annotation named through its enclosing class, as
 the JDK's own `java.lang.invoke.VarHandle` writes `@MethodHandle.PolymorphicSignature`.
 Such a name is not loadable as written -- its binary name separates the nesting with
@@ -188,6 +394,12 @@ and defaults to `true`, so existing code is unaffected. Setting it to false limi
 only that annotation; an applicable annotation on an enclosing package still
 applies.
 
+When `@DefaultQualifier` on the classpath lacks the `applyToSubpackages` element (for example,
+when resolved from upstream typetools `checker-qual` rather than EISOP's fork), the framework
+now degrades gracefully: it issues a note diagnostic once per checker instance explaining that
+package defaults will apply to subpackages unconditionally, and continues type-checking without
+crashing.
+
 The new `-Amode=<mode>` option turns on a checker-defined group of options.  A mode
 only sets an option the user did not, so an option written on the command line keeps
 the value given there.  Note that most options are on/off flags with no negative form,
@@ -197,7 +409,9 @@ so writing one cannot turn off what a mode enables.  A checker declares its mode
 The Nullness Checker supports `-Amode=jspecify`, which makes it behave as JSpecify
 specifies: it checks only code in the scope of an `@AnnotatedFor`, treats `@NullMarked`
 as a defaulting annotation, and performs neither initialization checking nor map-key
-checking.
+checking.  It also assumes that every called method is pure and that assertions are
+enabled, as if `-AassumePure` and `-AassumeAssertions=enabled` were supplied; an
+`-AassumeAssertions` value written alongside the mode takes precedence.
 
 The Checker Framework now issues an `annotation.on.supertype` error when an annotation supported by
 the checker is written as a main annotation on the superclass or interface in an `extends` or
@@ -554,7 +768,65 @@ defaults, and only the latter was cached. Both now use the new
 `SourceChecker.isElementAnnotatedForThisCheckerOrUpstreamChecker(Element)`,
 which `BaseTypeChecker` implements with a cache.
 
+New command-line option `-AignoreDeadCode` skips checking dead (unreachable) code: literal-condition
+branches such as `if (false)`, and code that dataflow determines can never be reached (such as a
+catch block for an exception type the try block can never throw). This option is not enabled by
+default, since dead code might become reachable after a future edit.
+
+Type argument inference no longer fails on an inexact method reference to a
+value-returning method that is passed where a functional interface whose method
+returns `void` is expected, so that the returned value is discarded.  It reported
+`type.argument.inference.crashed` on code that javac accepts.
+
+The Nullness Checker's `dereference.of.nullable` diagnostic is now reported at the
+member-select or `new` expression that performs the dereference, rather than at
+the start of the possibly-null receiver expression being dereferenced -- for
+example, in `firstObj.intList.add(1)` where `firstObj.intList` is possibly null,
+the marker now points at the access of `.add`, not at the start of `firstObj`.
+The message text is unchanged; only the reported source position moves.
+
+The Checker Framework no longer crashes on a wildcard type argument for an F-bounded type
+parameter, such as `Node<? extends Sub>` for `class Node<T extends Node<T>>` and
+`class Sub extends Node<Sub>`, or `Enum<? extends TimeUnit>`.  Capture conversion now gives
+the captured type variable the same upper bound that javac computes.
+
+Type argument inference no longer reports `type.argument.inference.crashed` for a lambda or
+method reference whose target, or whose receiver, is a functional interface type with a wildcard
+type argument for an F-bounded type parameter, such as `NodeSupplier<? extends Sub>` for
+`interface NodeSupplier<T extends Node<T>>`.  The ground target type now matches javac's.
+
+Type-checking a class with many fields under the Initialization Checker (and any checker
+built on it, such as the Nullness Checker) is no longer quadratic in the number of fields
+that are declared with an initializer or assigned in a constructor. Determining whether the
+enclosing receiver is still under initialization used to rescan every field of the class on
+each such declaration or assignment; it is now cached or answered with an early-exit scan.
+A class with 4000 such fields now type-checks in about 11 seconds instead of about 26.
+
 **Implementation details:**
+
+`QualifierDefaults` now keeps a second set of unchecked-code defaults, the permissive ones, so
+the members that name the conservative set say so: `STANDARD_UNCHECKED_DEFAULTS_TOP` and
+`STANDARD_UNCHECKED_DEFAULTS_BOTTOM` are now `CONSERVATIVE_UNCHECKED_DEFAULTS_TOP` and
+`CONSERVATIVE_UNCHECKED_DEFAULTS_BOTTOM`, and `addUncheckedCodeDefault` and
+`addUncheckedCodeDefaults` are now `addConservativeUncheckedCodeDefault` and
+`addConservativeUncheckedCodeDefaults`. The permissive counterparts are
+`PERMISSIVE_UNCHECKED_DEFAULTS_TOP`, `PERMISSIVE_UNCHECKED_DEFAULTS_BOTTOM`, and
+`addPermissiveUncheckedCodeDefault`. The new `addConservativeDefaultsForUncheckedCode` and
+`addPermissiveDefaultsForUncheckedCode` add each mode's built-in defaults, and
+`addUncheckedStandardDefaults` now calls each of them only if its command-line option is enabled.
+At most one mode's defaults are applied to a given element.
+`QualifierDefaults.applyPermissiveDefaults(Element)` and `SourceChecker.usePermissiveDefault(String)`
+are the permissive analogues of `applyConservativeDefaults` and `useConservativeDefault`.
+Both conservative and permissive unchecked defaults filter qualifiers by their `@TargetLocations`
+meta-annotation to avoid defaulting a qualifier onto a prohibited location (such as `@KeyForBottom`
+or `@FBCBottom` on method parameters).
+
+The jtreg tests that verify which annotations the Checker Framework writes into
+bytecode now run on JDK 25 and later. They used `com.sun.tools.classfile`, which
+JDK 25 removed; there are now parallel suites written against the `java.lang.classfile`
+API standardized in JDK 24, selected by a `@requires jdk.version.major` guard, so each
+JDK runs exactly one of the two. The `com.sun.tools.classfile` suites remain for JDK 24
+and earlier.
 
 `SourceChecker.printOrStoreMessage` no longer has the two `protected` overloads
 that took no suggested fixes (the four-argument form, and the five-argument form
@@ -571,6 +843,17 @@ the annotated package itself is always in scope. There are two new methods for t
 `@AnnotatedFor`. A null element, as in a `checker-qual` that predates it, is treated
 as true, so a package annotation from such an artifact applies to subpackages as it
 always did.
+
+`QualifierDefaults.addElementDefault` is now an initialization-time API: calling it once
+type checking has begun throws a `TypeSystemError`, because already-computed types and
+dataflow results are never recomputed and already-issued diagnostics cannot be retracted,
+so the new default would reach only part of the program. Register element defaults from
+`createQualifierDefaults` or `addCheckedCodeDefaults`. A registered default that conflicts
+with a `@DefaultQualifier` written on the same declaration now throws a `TypeSystemError`
+naming that declaration, rather than a `BugInCF` asking the user to report a framework bug.
+`AnnotatedTypeFactory.getRoot()` is now `public` rather than `protected`, so that code
+outside the factory can ask whether type checking has begun; an override of it in a
+subclass must be widened to `public` too.
 
 `AnnotatedIntersectionType.summarizeBounds` computes the summary described
 above, reading each bound's qualifier, explicit or defaulted, uniformly,
@@ -926,16 +1209,88 @@ Other improvements and bug fixes:
   command-line flag that drops such an annotation from the binary stub
   output (with a warning naming the annotation and file) instead of
   aborting the run.
+- Fixed a crash in `AnnotatedTypeMirror#hasExplicitAnnotation(Class)` when
+  called on a type that has explicit annotations but none of the queried
+  annotation class.
+- Fixed a bug where a type annotation written on the first alternative of a
+  multi-catch clause was silently dropped.
 
 **Closed issues:**
 
-eisop#104, eisop#386, eisop#433, eisop#622, eisop#737, eisop#778, eisop#786,
-eisop#792, eisop#863, eisop#949, eisop#1015, eisop#1059, eisop#1074, eisop#1244,
-eisop#1299, eisop#1315, eisop#1564, eisop#1592, eisop#1642, eisop#1653,
-eisop#1735, eisop#1801, eisop#1818, eisop#1819, eisop#1861, eisop#1862,
-eisop#1863, eisop#1865, eisop#1887, eisop#1965, eisop#1986, eisop#1987,
-eisop#1990, eisop#1991, eisop#2009, eisop#2020, eisop#2021, eisop#2032,
-eisop#2037, typetools#399, typetools#3203.
+eisop#104,
+eisop#386,
+eisop#433,
+eisop#622,
+eisop#627,
+eisop#720,
+eisop#737,
+eisop#778,
+eisop#786,
+eisop#792,
+eisop#833,
+eisop#863,
+eisop#949,
+eisop#1011,
+eisop#1015,
+eisop#1059,
+eisop#1060,
+eisop#1074,
+eisop#1107,
+eisop#1198,
+eisop#1217,
+eisop#1243,
+eisop#1244,
+eisop#1292,
+eisop#1299,
+eisop#1315,
+eisop#1359,
+eisop#1481,
+eisop#1542,
+eisop#1564,
+eisop#1592,
+eisop#1642,
+eisop#1653,
+eisop#1735,
+eisop#1801,
+eisop#1818,
+eisop#1819,
+eisop#1861,
+eisop#1862,
+eisop#1863,
+eisop#1865,
+eisop#1887,
+eisop#1958,
+eisop#1965,
+eisop#1986,
+eisop#1987,
+eisop#1990,
+eisop#1991,
+eisop#2009,
+eisop#2020,
+eisop#2021,
+eisop#2032,
+eisop#2034,
+eisop#2037,
+eisop#2047,
+eisop#2048,
+eisop#2050,
+eisop#2052,
+eisop#2056,
+eisop#2059,
+eisop#2061,
+eisop#2064,
+eisop#2074,
+eisop#2081,
+eisop#2084,
+eisop#2086,
+eisop#2089,
+eisop#2091,
+eisop#2105,
+eisop#2135,
+eisop#2140,
+typetools#399,
+typetools#2816,
+typetools#3203.
 
 
 Version 3.49.5-eisop1 (April 26, 2026)

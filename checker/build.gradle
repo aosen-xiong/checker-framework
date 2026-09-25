@@ -130,11 +130,7 @@ dependencies {
     testImplementation 'org.scala-lang:scala-library:2.12.15'
 
     // Required for checker/tests/index-initializedfields/RequireJavadoc.java
-    if (isJava8) {
-        testImplementation 'org.plumelib:options:1.0.6'
-    } else {
-        testImplementation 'org.plumelib:options:2.0.3'
-    }
+    testImplementation 'org.plumelib:options:2.0.3'
 
     testImplementation "junit:junit:${versions.junit}"
     testImplementation project(':framework-test')
@@ -367,8 +363,10 @@ tasks.named('assemble') {
 // checker.jar bundles framework, javacutil and dataflow as well, so scanning the two shaded
 // jars this project produces covers every Checker Framework class that gets relocated.
 rootProject.createCheckRelocatedStringsTask(
-project, [tasks.named('shadowJar'), tasks.named('checkerJar')])
-tasks.named('check') { dependsOn 'checkRelocatedStrings' }
+        project, [tasks.named('shadowJar'), tasks.named('checkerJar')])
+rootProject.createCheckPublicApiNoRelocatedTypesTask(
+        project, [tasks.named('checkerJar')])
+tasks.named('check') { dependsOn 'checkRelocatedStrings', 'checkPublicApiNoRelocatedTypes' }
 
 artifacts {
     fatJar(tasks.named('shadowJar'))

@@ -172,7 +172,9 @@ so small per-call wins paid back substantially.
   `addAll` got an `instanceof AnnotationMirrorSet` fast path; the two
   qualifier-hierarchy methods got an `instanceof` fast path; and
   `getDeclAnnotation`'s two loops (over an already-`AnnotationMirrorSet`-typed
-  local) became index loops. Re-measured on the same workload: `ArrayList$Itr`
+  local) became index loops (as do the later `getAllDeclAnnotations` and
+  `getDefaultQualifierAnnotations`, which walk the same set and must stay
+  index-based for the same reason). Re-measured on the same workload: `ArrayList$Itr`
   dropped to 3,172 events (1.81%), `AnnotationMirrorSet.iterator()` calls
   dropped 6,523 → 1,530 (−77%), and `AnnotationMirrorSet$ReadOnlyIter`
   (751 events) left the profile entirely. The `Object[]`/`IdentityHashMap`
@@ -1956,6 +1958,52 @@ The option was made opt-in via `-PajavaChecks` / `-DajavaChecks` (reflected in `
 JDK 17 running `checker/bin-devel/test-cftests-ajavachecks.sh`) preserves full consistency testing
 without paying the parsing and traversal overhead on routine or multi-JDK test runs.
 
+### Initialization Checker: uninitialized-field checks quadratic in field count (September 2026, PR #2137)
+
+Determining whether the enclosing receiver of a field declaration's initializer, or of a
+constructor field assignment, is still under initialization rescanned every field of the class on
+each such site: `InitializationParentAnnotatedTypeFactory#getSelfType` →
+`setSelfTypeInInitializationCode` → `areAllFieldsInitializedOnly(enclosingClass)` and
+`getUninitializedFields(store, ...).isEmpty()`, both O(fields). `getSelfType` runs once per field
+declaration with an initializer (a call site the same PR's fix for eisop#1217 added) and once per
+constructor field assignment (pre-existing, confirmed present on plain master without that fix).
+For a class with N such sites, this is N calls × O(N) work = O(N²).
+
+`areAllFieldsInitializedOnly` depends only on a class's field declarations, not on any dataflow
+store, so it is now cached (`IdentityHashMap<ClassTree, Boolean>`, cleared per compilation unit in
+a new `setRoot` override, matching how `GenericAnnotatedTypeFactory` clears its own per-tree
+caches there). `getUninitializedFields(...).isEmpty()` is genuinely store-dependent and cannot
+simply be cached per class — and a size comparison against `InitializationStore.initializedFields`
+is not sound either, since that set also holds static fields, superclass fields assigned through
+`this`, and fields added from method postconditions, so its size does not equal the class's own
+instance-field count. Instead, a new `getInstanceFields(ClassTree)` caches the class's non-static
+field list once, and a new `hasUninitializedInstanceFields` helper (in both this factory and its
+`InitializationAnnotatedTypeFactory` subclass) answers the emptiness question with an early-exit
+scan from the last-declared field backwards — fields are typically initialized in declaration
+order, so the last-declared one is likeliest to still be uninitialized — instead of building the
+full list `getUninitializedFields` returns for its other (list-consuming) callers, which are
+unchanged.
+
+Wall-clock on a synthetic class (`checker/bin/javac -processor nullness`, median of 3):
+
+| N (fields) | shape | before | after | speedup |
+| --- | --- | --- | --- | --- |
+| 4000 | declarations with initializers | 26.16 s | 10.94 s | 2.4x |
+| 4000 | constructor field assignments   | 26.08 s | 11.83 s | 2.2x |
+
+Growth per doubling of N flattens from ~3.0x/~2.8x (super-linear) to ~2.0x (roughly linear) for
+both shapes — the signature of the quadratic being gone, not just a constant-factor win.
+
+Confirmed unaffected: `checker/tests/initialization/Issue1217.java`, and every file in
+`checker/tests/initialization/` (61 files), produce byte-identical output before and after.
+
+Two related items were found but deliberately left for separate follow-up rather than addressed
+here: other, likely-linear-but-uninvestigated `CFAbstractStore`/`InitializationStore`
+copy-on-write costs that only begin to dominate the profile past this N (eisop#2143), and the new
+jtreg stress tests `Issue1438d`/`Issue1438e` (added earlier in the same PR, in the style of
+`Issue1438`/`Issue1438b`/`Issue1438c`) not being tight enough at their N=1000 scale to themselves
+catch a regression back to quadratic behavior (eisop#2144).
+
 ---
 
 
@@ -3170,12 +3218,19 @@ not single-leaf. Re-prioritized venues:
   returns one of two shared constant lists (the code defaults, ±unchecked) — covers the empty case
   with no map and no hashing; (2) non-empty scopes go through an **identity-keyed**
   `IdentityHashMap<DefaultSet, List<Default>>` (×2 for conservative). **Identity, not content,
-  keying:** a `DefaultSet` is mutated in place by `addElementDefault`, so a content/hashCode key would
-  corrupt the map; `defaultsAt` returns a stable per-scope object shared across a scope's members, so
-  identity hits well. All caches are cleared by `invalidateFusedDefaults()` from the three (and only)
+  keying:** `defaultsAt` returns a stable per-scope object shared across a scope's members, so
+  identity hits well, and a content key would pay a per-call hash of the set for no extra hits.
+  (An earlier version of this entry gave a different reason — that `addElementDefault` mutates a
+  `DefaultSet` in place, which a content key could not survive. That stopped being true in PR #2058:
+  the sets `addElementDefault` mutates live in `programmaticElementDefaults` and never reach these
+  caches, because `defaultsAtDirect` copies their contents into a set of its own. The invariant that
+  must be preserved is the general one: a `DefaultSet` that reaches the fused caches must not be
+  mutated afterwards.) All caches are cleared by `invalidateFusedDefaults()` from the three (and only)
   default-set mutators (`addCheckedCodeDefault`, `addUncheckedCodeDefault`, `addElementDefault`); a
   `fusedDefaultsCached` flag (set in `fusedDefaultsFor`) makes that a no-op while defaults are still
-  being registered, before any cache is populated. The returned lists are shared read-only (the
+  being registered, before any cache is populated. Since PR #2058 `addElementDefault` throws if
+  called once type checking has begun, so all three mutators are initialization-time only and that
+  no-op path is the normal one. The returned lists are shared read-only (the
   scanner only reads them). **Why the earlier reject was
   wrong:** the first attempt keyed on `DefaultSet` *identity* for *all* calls — useless, because the
   6,086 empty objects gave 6,086 keys; and a *content* key was dismissed as needing a per-call hash.
@@ -3216,6 +3271,10 @@ not single-leaf. Re-prioritized venues:
   plus `AnnotatedTypeScanner.visitDeclared`/`scan`/`reduce` are the biggest type-factory leaf group.
   Note `QualifierDefaults.elementDefaults` *already* caches the per-element *DefaultSet*; the profiled
   cost is the *application* — `applyDefaultsElement` scans the whole type tree once per `Default`.
+  (Since PR #2058 `elementDefaults` is *only* that memoization cache. It used to double as the
+  storage for defaults registered via `addElementDefault`, which is why a cache hit there could
+  formerly return a set that had never been merged with the element's written `@DefaultQualifier`
+  or its enclosing defaults.)
   Instrumented `applyDefaultsElement` on `:framework:checkNullness` (one fork, ≥3.0M calls, ~28M scans),
   keying each call on `(identityHashCode(scope), structural ATM.hashCode of the input type BEFORE
   mutation)` — a 64-bit composite, so hash-collision inflation is negligible at ~300k distinct keys:
