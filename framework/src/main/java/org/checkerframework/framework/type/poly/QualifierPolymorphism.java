@@ -35,12 +35,42 @@ public interface QualifierPolymorphism {
     void resolve(MethodInvocationTree tree, AnnotatedExecutableType type);
 
     /**
+     * Resolves polymorphism annotations for the given viewpoint-adapted type. The instantiations
+     * are determined from {@code declaredType}, and only the qualifiers of {@code type} that are
+     * polymorphic at the same position in {@code declaredType} are resolved. A polymorphic
+     * qualifier that viewpoint adaptation brought in from the receiver of the invocation belongs to
+     * the enclosing method and is left unchanged.
+     *
+     * @param tree the tree associated with the type
+     * @param declaredType the type of the invoked method before viewpoint adaptation; not
+     *     side-effected by this method
+     * @param type the viewpoint-adapted {@code declaredType}; is side-effected by this method
+     */
+    void resolve(
+            MethodInvocationTree tree,
+            AnnotatedExecutableType declaredType,
+            AnnotatedExecutableType type);
+
+    /**
      * Resolves polymorphism annotations for the given type.
      *
      * @param tree the tree associated with the type
      * @param type the type to annotate; is side-effected by this method
      */
     void resolve(NewClassTree tree, AnnotatedExecutableType type);
+
+    /**
+     * Resolves polymorphism annotations for the given viewpoint-adapted type. This is the
+     * counterpart of {@link #resolve(MethodInvocationTree, AnnotatedExecutableType,
+     * AnnotatedExecutableType)} for a constructor invocation.
+     *
+     * @param tree the tree associated with the type
+     * @param declaredType the type of the invoked constructor before viewpoint adaptation; not
+     *     side-effected by this method
+     * @param type the viewpoint-adapted {@code declaredType}; is side-effected by this method
+     */
+    void resolve(
+            NewClassTree tree, AnnotatedExecutableType declaredType, AnnotatedExecutableType type);
 
     /**
      * Resolves polymorphism annotations for the given type.
