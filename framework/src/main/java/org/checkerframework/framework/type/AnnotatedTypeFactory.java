@@ -694,8 +694,8 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
 
     /**
      * Caches, per method element, whether its declared type contains a polymorphic qualifier. Such
-     * methods are not cached in {@link #methodAsMemberOfCache} because {@code
-     * methodFromUsePreSubstitution} resolves their qualifiers per call from the arguments.
+     * methods are not cached in {@link #methodAsMemberOfCache} because their qualifiers are
+     * resolved per call from the arguments.
      */
     private final IdentityHashMap<ExecutableElement, Boolean> methodDeclaresPolyCache;
 
@@ -3387,10 +3387,11 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
      * inference. The result depends only on {@code methodElt} and {@code receiverType}; see {@link
      * #methodFromUse(ExpressionTree, ExecutableElement, AnnotatedTypeMirror, boolean)}.
      *
-     * @param tree the invocation/reference tree (used only by {@code methodFromUsePreSubstitution})
+     * @param tree the invocation/reference tree (used only by {@code methodFromUsePreSubstitution}
+     *     and {@code methodFromUsePostViewpointAdaptation})
      * @param methodElt the invoked method
      * @param receiverType the receiver type
-     * @param inferTypeArgs passed through to {@code methodFromUsePreSubstitution}
+     * @param inferTypeArgs if true, resolve polymorphic qualifiers
      * @return the method's type as a member of {@code receiverType}
      */
     private AnnotatedExecutableType computeMethodTypeAsMemberOf(
@@ -3403,11 +3404,25 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
         AnnotatedExecutableType memberTypeWithOverrides =
                 applyFakeOverrides(receiverType, methodElt, memberTypeWithoutOverrides);
         memberTypeWithOverrides = applyRecordTypesToAccessors(methodElt, memberTypeWithOverrides);
-        methodFromUsePreSubstitution(tree, memberTypeWithOverrides, inferTypeArgs);
+        // A call instantiates the type parameters and the polymorphic qualifiers of the method
+        // declaration.  Viewpoint adaptation comes before both, so that the receiver's viewpoint
+        // does not rewrite an instantiation.
+        boolean resolvePolyQualsAfterAdaptation =
+                inferTypeArgs
+                        && viewpointAdapter != null
+                        && tree instanceof MethodInvocationTree
+                        && containsPolymorphicQualifier(memberTypeWithOverrides);
+        methodFromUsePreSubstitution(
+                tree, memberTypeWithOverrides, inferTypeArgs && !resolvePolyQualsAfterAdaptation);
 
-        // Perform viewpoint adaption before type argument substitution.
         if (viewpointAdapter != null) {
+            AnnotatedExecutableType declaredType =
+                    resolvePolyQualsAfterAdaptation ? memberTypeWithOverrides.deepCopy() : null;
             viewpointAdapter.viewpointAdaptMethod(receiverType, methodElt, memberTypeWithOverrides);
+            if (declaredType != null) {
+                methodFromUsePostViewpointAdaptation(
+                        (MethodInvocationTree) tree, declaredType, memberTypeWithOverrides);
+            }
         }
 
         return AnnotatedTypes.asMemberOf(
@@ -3721,12 +3736,29 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
      *
      * @param tree either a method invocation or a member reference tree
      * @param type declared method type before type variable substitution
-     * @param resolvePolyQuals if true, resolve polymorphic qualifiers
+     * @param resolvePolyQuals if true, resolve polymorphic qualifiers. It is false for a method
+     *     invocation whose polymorphic qualifiers are resolved after viewpoint adaptation, by
+     *     {@link #methodFromUsePostViewpointAdaptation}.
      */
     protected void methodFromUsePreSubstitution(
             ExpressionTree tree, AnnotatedExecutableType type, boolean resolvePolyQuals) {
         assert tree instanceof MethodInvocationTree || tree instanceof MemberReferenceTree;
     }
+
+    /**
+     * Resolves the polymorphic qualifiers of an invoked method after its declared type was
+     * viewpoint-adapted. If this method is called for an invocation, then {@link
+     * #methodFromUsePreSubstitution} was called with {@code resolvePolyQuals} set to false.
+     *
+     * @param tree a method invocation
+     * @param declaredType the declared method type before viewpoint adaptation
+     * @param type the viewpoint-adapted {@code declaredType}, before type variable substitution;
+     *     side-effected by this method
+     */
+    protected void methodFromUsePostViewpointAdaptation(
+            MethodInvocationTree tree,
+            AnnotatedExecutableType declaredType,
+            AnnotatedExecutableType type) {}
 
     /**
      * Java special-cases the return type of {@link java.lang.Class#getClass() getClass()}. Though
@@ -3967,9 +3999,18 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
 
         ExecutableElement ctor = TreeUtils.elementFromUse(tree);
         AnnotatedExecutableType con = getAnnotatedType(ctor); // get unsubstituted type
-        constructorFromUsePreSubstitution(tree, con, inferTypeArgs);
+        AnnotatedExecutableType declaredCon =
+                prepareConstructorForViewpointAdaptation(tree, con, inferTypeArgs);
 
         if (tree.getClassBody() != null) {
+            // Viewpoint adapt the anonymous constructor before it takes its parameter types and
+            // its return type annotations from the super constructor, which is adapted separately
+            // below.  Adapting it afterwards would adapt those a second time.
+            if (viewpointAdapter != null) {
+                // The viewpoint adapter sets the parameter types, so store the vararg type first.
+                con.computeVarargType();
+                viewpointAdaptConstructorFromUse(tree, type, ctor, declaredCon, con);
+            }
             // Because the anonymous constructor can't have explicit annotations on its parameters,
             // they are copied from the super constructor invoked in the anonymous constructor. To
             // do this:
@@ -3980,14 +4021,13 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
             // 5. copy annotations on the return type to `con`.
             ExecutableElement superCtor = TreeUtils.getSuperConstructor(tree);
             AnnotatedExecutableType superCon = getAnnotatedType(superCtor);
-            constructorFromUsePreSubstitution(tree, superCon, inferTypeArgs);
+            AnnotatedExecutableType declaredSuperCon =
+                    prepareConstructorForViewpointAdaptation(tree, superCon, inferTypeArgs);
             superCon =
                     AnnotatedTypes.asMemberOf(types, this, type, superCon.getElement(), superCon);
-            if (viewpointAdapter != null) {
-                // Viewpoint adapt the super constructor, because the return type could depend on
-                // the viewpoint and there is an LUB computation later.
-                viewpointAdapter.viewpointAdaptConstructor(type, superCtor, superCon);
-            }
+            // Viewpoint adapt the super constructor, because the return type could depend on the
+            // viewpoint and there is an LUB computation later.
+            viewpointAdaptConstructorFromUse(tree, type, superCtor, declaredSuperCon, superCon);
             con.computeVarargType(superCon);
             if (superCon.getParameterTypes().size() == con.getParameterTypes().size()) {
                 con.setParameterTypes(superCon.getParameterTypes());
@@ -4059,10 +4099,7 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
             // vararg type again.
             con.computeVarargType();
             con = AnnotatedTypes.asMemberOf(types, this, type, ctor, con);
-        }
-
-        if (viewpointAdapter != null) {
-            viewpointAdapter.viewpointAdaptConstructor(type, ctor, con);
+            viewpointAdaptConstructorFromUse(tree, type, ctor, declaredCon, con);
         }
 
         TypeArguments typeArguments =
@@ -4184,15 +4221,79 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
     }
 
     /**
+     * Calls {@link #constructorFromUsePreSubstitution} on {@code con}. As for a method invocation
+     * (see {@link #computeMethodTypeAsMemberOf}), the polymorphic qualifiers of a constructor are
+     * resolved after viewpoint adaptation, by {@link #viewpointAdaptConstructorFromUse}.
+     *
+     * @param tree a constructor invocation
+     * @param con the declared type of a constructor that {@code tree} invokes; side-effected by
+     *     this method
+     * @param inferTypeArgs if true, resolve polymorphic qualifiers
+     * @return a copy of {@code con} to pass to {@link #viewpointAdaptConstructorFromUse}, or null
+     *     if the polymorphic qualifiers of {@code con} need no resolution after viewpoint
+     *     adaptation
+     */
+    private @Nullable AnnotatedExecutableType prepareConstructorForViewpointAdaptation(
+            NewClassTree tree, AnnotatedExecutableType con, boolean inferTypeArgs) {
+        boolean resolvePolyQualsAfterAdaptation =
+                inferTypeArgs && viewpointAdapter != null && containsPolymorphicQualifier(con);
+        constructorFromUsePreSubstitution(
+                tree, con, inferTypeArgs && !resolvePolyQualsAfterAdaptation);
+        return resolvePolyQualsAfterAdaptation ? con.deepCopy() : null;
+    }
+
+    /**
+     * Viewpoint-adapts {@code con} and then resolves its polymorphic qualifiers. Does nothing if
+     * there is no viewpoint adapter.
+     *
+     * @param tree a constructor invocation
+     * @param type the type that {@code tree} creates
+     * @param ctor the constructor of which {@code con} is the type
+     * @param declaredCon the result of {@link #prepareConstructorForViewpointAdaptation} for {@code
+     *     con}
+     * @param con the type of a constructor that {@code tree} invokes; side-effected by this method
+     */
+    private void viewpointAdaptConstructorFromUse(
+            NewClassTree tree,
+            AnnotatedDeclaredType type,
+            ExecutableElement ctor,
+            @Nullable AnnotatedExecutableType declaredCon,
+            AnnotatedExecutableType con) {
+        if (viewpointAdapter == null) {
+            return;
+        }
+        viewpointAdapter.viewpointAdaptConstructor(type, ctor, con);
+        if (declaredCon != null) {
+            constructorFromUsePostViewpointAdaptation(tree, declaredCon, con);
+        }
+    }
+
+    /**
      * A callback method for the AnnotatedTypeFactory subtypes to customize the handling of the
      * declared constructor type before type variable substitution.
      *
      * @param tree a NewClassTree from constructorFromUse()
      * @param type declared method type before type variable substitution
-     * @param resolvePolyQuals if true, resolve polymorphic qualifiers
+     * @param resolvePolyQuals if true, resolve polymorphic qualifiers. It is false for a
+     *     constructor whose polymorphic qualifiers are resolved after viewpoint adaptation, by
+     *     {@link #constructorFromUsePostViewpointAdaptation}.
      */
     protected void constructorFromUsePreSubstitution(
             NewClassTree tree, AnnotatedExecutableType type, boolean resolvePolyQuals) {}
+
+    /**
+     * Resolves the polymorphic qualifiers of an invoked constructor after its declared type was
+     * viewpoint-adapted. If this method is called for a constructor, then {@link
+     * #constructorFromUsePreSubstitution} was called with {@code resolvePolyQuals} set to false.
+     *
+     * @param tree a NewClassTree from constructorFromUse()
+     * @param declaredType the declared constructor type before viewpoint adaptation
+     * @param type the viewpoint-adapted {@code declaredType}; side-effected by this method
+     */
+    protected void constructorFromUsePostViewpointAdaptation(
+            NewClassTree tree,
+            AnnotatedExecutableType declaredType,
+            AnnotatedExecutableType type) {}
 
     /**
      * Returns the return type of the method {@code m}.
