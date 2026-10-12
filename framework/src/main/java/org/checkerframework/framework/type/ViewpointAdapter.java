@@ -58,6 +58,9 @@ public interface ViewpointAdapter {
      * Viewpoint-adapts a method invocation. Takes an unsubstituted method invocation type and
      * performs the viewpoint adaptation in place, modifying the parameter.
      *
+     * <p>The polymorphic qualifiers of {@code methodType} are not yet resolved. An implementation
+     * must leave them unchanged; they are resolved afterwards, where they are still present.
+     *
      * @param receiverType the receiver type through which a method is invoked
      * @param methodElt the element of the invoked method. Only used to determine whether this type
      *     should be viewpoint-adapted.
