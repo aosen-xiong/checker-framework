@@ -10,14 +10,13 @@ import org.checkerframework.dataflow.qual.Pure;
 import org.checkerframework.dataflow.qual.SideEffectFree;
 import org.checkerframework.framework.type.visitor.AnnotatedTypeVisitor;
 import org.checkerframework.framework.util.AnnotatedTypes;
-import org.checkerframework.javacutil.AnnotationBuilder;
 import org.checkerframework.javacutil.AnnotationMirrorSet;
 import org.checkerframework.javacutil.AnnotationUtils;
 import org.checkerframework.javacutil.BugInCF;
+import org.checkerframework.javacutil.DeepCopyable;
 import org.checkerframework.javacutil.ElementUtils;
 import org.checkerframework.javacutil.TypeKindUtils;
 import org.plumelib.util.CollectionsPlume;
-import org.plumelib.util.DeepCopyable;
 
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
@@ -137,7 +136,8 @@ public abstract class AnnotatedTypeMirror implements DeepCopyable<AnnotatedTypeM
     // public AnnotatedTypeMirror clone() { ... }
 
     /**
-     * Creates an AnnotatedTypeMirror for the provided type. The result contains no annotations.
+     * Creates an empty AnnotatedTypeMirror for the provided type. The result contains no
+     * annotations.
      *
      * @param type the underlying type for the resulting AnnotatedTypeMirror
      * @param atypeFactory the type factory that will build the result
@@ -157,15 +157,13 @@ public abstract class AnnotatedTypeMirror implements DeepCopyable<AnnotatedTypeM
                 result = new AnnotatedArrayType((ArrayType) type, atypeFactory);
                 break;
             case DECLARED:
+            // An ERROR type is a class whose class file is not on the classpath.  javac reported no
+            // error, because it completes such a symbol lazily and never needs it, so treat the
+            // type like any other declared type.  See eisop issue 2094 and typetools issue 8055.
+            case ERROR:
                 result =
                         new AnnotatedDeclaredType((DeclaredType) type, atypeFactory, isDeclaration);
                 break;
-            case ERROR:
-                throw new ErrorTypeKindException(
-                        "AnnotatedTypeMirror.createType: input is not compilable. Found error type:"
-                                + " "
-                                + type);
-
             case EXECUTABLE:
                 result = new AnnotatedExecutableType((ExecutableType) type, atypeFactory);
                 break;
@@ -299,7 +297,7 @@ public abstract class AnnotatedTypeMirror implements DeepCopyable<AnnotatedTypeM
      *
      * @param annotation the qualifier hierarchy to check for
      * @return true iff this type has a primary annotation in the same hierarchy as {@code
-     *     annotation}.
+     *     annotation}
      */
     // typetools: hasPrimaryAnnotationInHierarchy
     public boolean hasAnnotationInHierarchy(AnnotationMirror annotation) {
@@ -680,20 +678,6 @@ public abstract class AnnotatedTypeMirror implements DeepCopyable<AnnotatedTypeM
     }
 
     /**
-     * Adds an annotation to this type.
-     *
-     * @param a the class of the annotation to add
-     * @deprecated This method creates a new {@code AnnotationMirror} every time it is called.
-     *     Instead of calling this method, store the {@code AnnotationMirror} in a field and use
-     *     {@link #addAnnotation(AnnotationMirror)} instead.
-     */
-    @Deprecated // 2023-06-15
-    public void addAnnotation(Class<? extends Annotation> a) {
-        AnnotationMirror anno = AnnotationBuilder.fromClass(atypeFactory.elements, a);
-        addAnnotation(anno);
-    }
-
-    /**
      * Adds the canonical version of all {@code annotations} as primary annotations of this type
      * and, in the case of {@link AnnotatedTypeVariable}s, {@link AnnotatedWildcardType}s, and
      * {@link AnnotatedIntersectionType}s, adds them to all bounds. (The canonical version is found
@@ -1059,8 +1043,9 @@ public abstract class AnnotatedTypeMirror implements DeepCopyable<AnnotatedTypeM
      * Returns a shallow copy of this type. A shallow copy implies that each component type in the
      * output copy refers to the same object as the object being copied.
      *
-     * @param copyAnnotations whether copy should have annotations, i.e. whether field {@code
-     *     annotations} should be copied.
+     * @param copyAnnotations true if copy should have annotations, i.e., field {@code annotations}
+     *     should be copied
+     * @return a shallow copy of this type
      */
     public abstract AnnotatedTypeMirror shallowCopy(boolean copyAnnotations);
 
@@ -1170,7 +1155,7 @@ public abstract class AnnotatedTypeMirror implements DeepCopyable<AnnotatedTypeM
         protected @MonotonicNonNull List<AnnotatedTypeMirror> typeArgs;
 
         /**
-         * Whether the type was initially raw, i.e. the user did not provide the type arguments.
+         * True if the type was initially raw, i.e. the user did not provide the type arguments.
          * typeArgs will contain inferred type arguments, which might be too conservative at the
          * moment.
          *
@@ -1348,10 +1333,14 @@ public abstract class AnnotatedTypeMirror implements DeepCopyable<AnnotatedTypeM
                 }
             } else if (isDeclaration()) {
                 for (TypeMirror javaTypeArg : javaTypeArgs) {
-                    AnnotatedTypeVariable tv =
-                            (AnnotatedTypeVariable)
-                                    AnnotatedTypeMirror.createType(javaTypeArg, atypeFactory, true);
-                    typeArgs.add(tv);
+                    AnnotatedTypeMirror typeArg =
+                            AnnotatedTypeMirror.createType(javaTypeArg, atypeFactory, true);
+                    if (!(typeArg instanceof AnnotatedTypeVariable)) {
+                        throw new BugInCF(
+                                "Type argument %s of declaration %s has kind %s, not TYPEVAR.",
+                                javaTypeArg, t, javaTypeArg.getKind());
+                    }
+                    typeArgs.add(typeArg);
                 }
             } else {
                 // Lazily resolve typeParameters; only needed if a wildcard type argument is
@@ -1437,7 +1426,7 @@ public abstract class AnnotatedTypeMirror implements DeepCopyable<AnnotatedTypeM
         }
 
         /**
-         * Return the declared type with its type arguments removed. This also replaces the
+         * Returns the declared type with its type arguments removed. This also replaces the
          * underlying type with its erasure.
          *
          * @return a fresh copy of the declared type with no type arguments
@@ -1787,7 +1776,7 @@ public abstract class AnnotatedTypeMirror implements DeepCopyable<AnnotatedTypeM
          *
          * @param receiverType the receiver type
          */
-        /*package-private*/ void setReceiverType(@Nullable AnnotatedDeclaredType receiverType) {
+        public void setReceiverType(@Nullable AnnotatedDeclaredType receiverType) {
             this.receiverType = receiverType;
             receiverTypeComputed = true;
         }
@@ -2433,7 +2422,7 @@ public abstract class AnnotatedTypeMirror implements DeepCopyable<AnnotatedTypeM
         }
 
         /**
-         * Get the lower bound field directly, bypassing any lazy initialization. This method is
+         * Returns the lower bound field directly, bypassing any lazy initialization. This method is
          * necessary to prevent infinite recursions in initialization. In general, prefer
          * getLowerBound.
          *
@@ -2504,7 +2493,7 @@ public abstract class AnnotatedTypeMirror implements DeepCopyable<AnnotatedTypeM
         }
 
         /**
-         * Get the upper bound field directly, bypassing any lazy initialization. This method is
+         * Returns the upper bound field directly, bypassing any lazy initialization. This method is
          * necessary to prevent infinite recursions in initialization. In general, prefer
          * getUpperBound.
          *
@@ -2515,8 +2504,8 @@ public abstract class AnnotatedTypeMirror implements DeepCopyable<AnnotatedTypeM
         }
 
         /**
-         * Get the upper bound of the type variable, possibly lazily initializing it. Attention: If
-         * the upper bound is lazily initialized, it will not contain any annotations! Callers of
+         * Returns the upper bound of the type variable, possibly lazily initializing it. Attention:
+         * If the upper bound is lazily initialized, it will not contain any annotations! Callers of
          * the method have to make sure that an AnnotatedTypeFactory first processed the bound.
          *
          * @return the upper bound type of this type variable
@@ -2772,7 +2761,7 @@ public abstract class AnnotatedTypeMirror implements DeepCopyable<AnnotatedTypeM
         private AnnotatedTypeMirror extendsBound;
 
         /**
-         * Whether this is a type argument for a type whose {@code #underlyingType} is raw. The
+         * True if this is a type argument for a type whose {@code #underlyingType} is raw. The
          * Checker Framework gives raw types wildcard type arguments so that the annotated type can
          * be used as if the annotated type was not raw.
          */
@@ -3008,11 +2997,11 @@ public abstract class AnnotatedTypeMirror implements DeepCopyable<AnnotatedTypeM
         }
 
         /**
-         * Whether this is a type argument to a type whose {@code #underlyingType} is raw. The
-         * Checker Framework gives raw types wildcard type arguments so that the annotated type can
-         * be used as if the annotated type was not raw.
+         * Returns true if this is a type argument to a type whose {@code #underlyingType} is raw.
+         * The Checker Framework gives raw types wildcard type arguments so that the annotated type
+         * can be used as if the annotated type was not raw.
          *
-         * @return whether this is a type argument to a type whose {@code #underlyingType} is raw
+         * @return true if this is a type argument to a type whose {@code #underlyingType} is raw
          */
         public boolean isTypeArgOfRawType() {
             return typeArgOfRawType;

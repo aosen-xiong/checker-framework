@@ -653,7 +653,9 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
      */
     @Override
     protected void checkMethodInvocability(
-            AnnotatedExecutableType method, MethodInvocationTree tree) {
+            AnnotatedExecutableType method,
+            MethodInvocationTree tree,
+            @Nullable AnnotatedTypeMirror receiverType) {
         AnnotatedDeclaredType receiver = method.getReceiverType();
         if (receiver != null
                 && !ElementUtils.isStatic(method.getElement())
@@ -661,7 +663,7 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
             checker.reportError(tree, LOST_RECEIVER);
             return;
         }
-        super.checkMethodInvocability(method, tree);
+        super.checkMethodInvocability(method, tree, receiverType);
     }
 
     @Override
