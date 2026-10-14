@@ -18,7 +18,8 @@ Several optimizations also reduce GC pressure and superlinear behavior for
 large (e.g. auto-generated) files. Type-checking a class with many fields
 under the Initialization Checker (and any checker built on it, such as the
 Nullness Checker) is no longer quadratic in the number of fields: a class
-with 4000 fields now type-checks in ~11 seconds instead of ~26.
+with 4000 fields now type-checks in ~11 seconds instead of ~26. Merging
+dataflow stores after many method calls in such a class is also faster.
 
 The annotated JDK and built-in stub files are now distributed as pre-parsed
 binary files, removing JavaParser from checker startup. A missing or stale
@@ -168,6 +169,17 @@ A stub file that declares a record where the running JDK has a class (for exampl
 the JDK 21 annotated JDK on JDK 8 to 17) no longer loses the annotations of the
 members that follow the record.
 
+The Nullness Checker and the other checkers built on the Initialization Checker
+no longer fail with "fromClass can't load class ... PolyInitialized" when the
+compilation classpath has a checker-qual artifact without `@PolyInitialized`,
+such as one brought in transitively by a dependency.  They issue a note and run
+without `@PolyInitialized`.
+
+The Value Checker no longer slows down on loops whose bound is not an integer
+literal (such as `i < n`): the loop variable takes the range that the bound
+permits right away. On plume-util, it takes 8.3s instead of 10.1s. Precision is
+unchanged or better.
+
 ### Implementation details
 
 The test framework accepts an expected error key in square brackets, as in
@@ -205,6 +217,8 @@ Performance optimizations:
   final locals indexed by declaring element; `ValueQualifierHierarchy` caches
   `value()` elements (~18% faster on constant-heavy classes).
 - `TreeUtils.sameTree()` uses a visitor instead of `toString()`.
+- New `TreeUtils.getStartPosition(Tree)` and `TreeUtils.getEndPosition(CompilationUnitTree, Tree)`
+  replace the framework's uses of the `SourcePositions` methods that JDK 27 deprecates for removal.
 - `AnnotatedTypeFactory.isFromByteCode(Element)` caches per element.
 
 Other improvements and bug fixes:
@@ -223,7 +237,8 @@ Other improvements and bug fixes:
   `override.typaram.invalid`, closing a soundness hole (eisop#1965).
 - Enclosing type argument fixes (eisop#737): `TypeFromTypeTreeVisitor` restores
   declared bounds; `BaseTypeValidator` checks enclosing type arguments against
-  declared bounds.
+  declared bounds, and reports an out-of-bound enclosing type argument once in
+  a chain of three or more levels (eisop#1926).
 - `AnnotatedIntersectionType.summarizeBounds` computes bound summaries.
   `clearAnnotations()` on intersection, wildcard, and type-variable types now
   also clears bounds. `AnnotatedTypes.glbSubtype` uses `shallowCopy(false)`.
@@ -250,14 +265,34 @@ Other improvements and bug fixes:
   variables directly.
 - Type argument inference crash fixes: `? super`/`? extends` interactions,
   lambda-returned generic calls, implicitly typed lambdas, inexact method
-  references, F-bounded wildcards.
+  references, F-bounded wildcards, diamonds in anonymous subclasses of inner
+  classes with an explicit enclosing instance (`outer.new Inner<>() {}`).
 - Type argument inference treats an `Error` thrown in a lambda body as an
   unchecked exception, instead of crashing.
 - Type argument inference no longer treats a `return` in a method of a local or
   anonymous class declared in a lambda body as a result of the lambda, which
   crashed inference.
+- Type argument inference no longer crashes on nested lambdas whose functional
+  interface throws a type variable.
 - Type argument inference resolves polymorphic qualifiers in nested generic
   invocations and method references.
+- Type argument inference resolves an inference variable after the capture
+  variables mentioned in its bounds (JLS 18.4); this fixes a crash on chained
+  calls such as `s.map(P::type).map(Class::getName)` where `type()` returns
+  `Class<? extends T>`.
+- Type argument inference no longer crashes on an explicitly typed lambda
+  passed to a parameter of a wildcard-parameterized functional interface type,
+  such as `m("x", (Object o) -> "y")` for a parameter
+  `Function<? super T, String>`.
+- Type argument inference no longer crashes on a generic method call returned
+  by a lambda whose target is a raw functional interface type, such as
+  `Supplier s = () -> never();` or `(Supplier) () -> never()`.
+- Type argument inference accounts for the type arguments of the enclosing
+  type of an inner class type, such as `T` in `Outer<T>.Inner`; it used to
+  crash on `consume(make(x))` where `make` returns `Outer<T>.Inner`.
+- Type argument inference no longer crashes on a nested `? extends` wildcard
+  that mentions the inferred type variable, such as a lambda passed as
+  `Supplier<? extends List<? extends T>>`.
 - Viewpoint adaptation no longer crashes on raw F-bounded classes; new
   `viewpointAdaptTypeDeclarationBounds` and `extractAnnotationMirror` hooks.
   Viewpoint-adapting checkers can now extend types with receiver-dependent bounds.
@@ -270,6 +305,10 @@ Other improvements and bug fixes:
   `methodFromUsePreSubstitution` and `constructorFromUsePreSubstitution` no
   longer resolve these polymorphic qualifiers. The constructor of an anonymous
   class is now viewpoint-adapted once rather than twice.
+- Viewpoint adaptation no longer overflows the stack when computing the
+  supertypes of a type whose type argument is a type variable of another class,
+  such as `Seq<E>` in `interface Coll<E> { void m(Seq<E> s); }`, or any member
+  access on a three-deep generic interface such as `java.util.List`.
 - `-AcheckCastElementType` fixes: no longer crashes on downcasts, incomparable
   types, null literal casts, or differing type-argument counts.
 - `BinaryStubFileGenerator` accepts a file, directory (`--bundle`), or jar.
@@ -296,6 +335,7 @@ Other improvements and bug fixes:
   `resolveAnnotationFileLocation` plus `allAnnotationFiles(File, ...)`.
 - Custom annotated JDKs no longer load `checker.jar`'s binary JDK on top.
 - Fixed `-AwarnUnneededSuppressions` for values matching a checker prefix.
+- `-AwarnUnneededSuppressions` now also works with `-AassumeInitialized`.
 - Fixed missing `EnsuresNonNullIf` import in
   `permit-nullness-assertion-exception.astub`.
 - Fixed capture conversion dropping qualifiers from type-variable bounds.
@@ -309,11 +349,14 @@ Other improvements and bug fixes:
 ### Closed issues
 
 eisop#104,
+eisop#228,
 eisop#386,
 eisop#412,
 eisop#433,
+eisop#470,
 eisop#622,
 eisop#627,
+eisop#719,
 eisop#720,
 eisop#737,
 eisop#778,
@@ -327,6 +370,7 @@ eisop#1015,
 eisop#1059,
 eisop#1060,
 eisop#1074,
+eisop#1077,
 eisop#1107,
 eisop#1198,
 eisop#1217,
@@ -341,6 +385,7 @@ eisop#1481,
 eisop#1542,
 eisop#1564,
 eisop#1592,
+eisop#1637,
 eisop#1642,
 eisop#1653,
 eisop#1735,
@@ -352,6 +397,7 @@ eisop#1862,
 eisop#1863,
 eisop#1865,
 eisop#1887,
+eisop#1926,
 eisop#1958,
 eisop#1965,
 eisop#1986,
@@ -361,8 +407,10 @@ eisop#1991,
 eisop#2009,
 eisop#2020,
 eisop#2021,
+eisop#2029,
 eisop#2032,
 eisop#2034,
+eisop#2036,
 eisop#2037,
 eisop#2047,
 eisop#2048,
@@ -382,14 +430,22 @@ eisop#2086,
 eisop#2089,
 eisop#2091,
 eisop#2094,
+eisop#2098,
+eisop#2104,
 eisop#2105,
+eisop#2106,
+eisop#2114,
 eisop#2115,
 eisop#2135,
 eisop#2140,
+eisop#2146,
 eisop#2155,
 eisop#2156,
+eisop#2158,
+eisop#2159,
 eisop#2160,
 eisop#2187,
+eisop#2224,
 eisop#2233,
 typetools#399,
 typetools#2816,
