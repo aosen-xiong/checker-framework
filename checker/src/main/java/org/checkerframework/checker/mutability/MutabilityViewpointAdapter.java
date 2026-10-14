@@ -129,8 +129,9 @@ public class MutabilityViewpointAdapter extends AbstractViewpointAdapter {
      * iterates it.
      *
      * <p>The rule is uniform: a {@code @MutabilityLost} call site adapts the receiver to
-     * {@code @MutabilityLost}. Such a call is rejected by {@code MutabilityNoInitVisitor}, because
-     * the adapted receiver type contains {@code @MutabilityLost}, not by adaptation.
+     * {@code @MutabilityLost}. As in Generic Universe Types, that does not reject the call. Only
+     * the adapted parameter types and method type-variable bounds must be free of
+     * {@code @MutabilityLost}.
      */
     @Override
     protected AnnotatedTypeMirror combineTypeWithReceiverType(
