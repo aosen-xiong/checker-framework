@@ -5,7 +5,8 @@ import org.checkerframework.checker.mutability.qual.ReceiverDependentMutable;
 // A @ReceiverDependentMutable method receiver adapts uniformly, including through
 // @MutabilityLost: @MutabilityLost |> @ReceiverDependentMutable = @MutabilityLost. As in Generic
 // Universe Types, a receiver that contains @MutabilityLost does not block the call. Only the
-// adapted parameter types and method type-variable bounds must be free of @MutabilityLost.
+// adapted parameter types and method type-variable bounds must be free of @MutabilityLost, and a
+// type argument that the declared receiver requalifies must not adapt to @MutabilityLost.
 @ReceiverDependentMutable class LostReceiverCell {
     int get(@ReceiverDependentMutable LostReceiverCell this) {
         return 0;
@@ -16,6 +17,11 @@ import org.checkerframework.checker.mutability.qual.ReceiverDependentMutable;
 
 @ReceiverDependentMutable class LostReceiverBox<E extends @Readonly Object> {
     int size(@Readonly LostReceiverBox<E> this) {
+        return 0;
+    }
+
+    // Requalifies E: callable only when E follows the box's own mutability.
+    int follows(@Readonly LostReceiverBox<@ReceiverDependentMutable E> this) {
         return 0;
     }
 }
@@ -45,6 +51,17 @@ import org.checkerframework.checker.mutability.qual.ReceiverDependentMutable;
     int typeArgumentThroughReadonly(@Readonly LostReceiverHolder h) {
         // h.box is @MutabilityLost LostReceiverBox<@MutabilityLost LostReceiverCell>. Allowed.
         return h.box.size();
+    }
+
+    int requalifiedThroughMutable(@Mutable LostReceiverBox<@Mutable LostReceiverCell> b) {
+        // @Mutable |> @ReceiverDependentMutable = @Mutable: the caller knows the argument it needs.
+        return b.follows();
+    }
+
+    int requalifiedThroughReadonly(@Readonly LostReceiverBox<@Mutable LostReceiverCell> b) {
+        // @Readonly |> @ReceiverDependentMutable = @MutabilityLost for the requalified argument.
+        // :: error: (mutability.lost.receiver)
+        return b.follows();
     }
 
     void parameterThroughReadonly(@Readonly LostReceiverHolder h) {

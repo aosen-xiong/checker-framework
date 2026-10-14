@@ -69,6 +69,11 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
     /** Error key for {@code @MutabilityLost} in adapted parameter types. */
     private static final @CompilerMessageKey String LOST_PARAMETER = "mutability.lost.parameter";
 
+    /**
+     * Error key for a requalified receiver type argument that adapts to {@code @MutabilityLost}.
+     */
+    private static final @CompilerMessageKey String LOST_RECEIVER = "mutability.lost.receiver";
+
     /** Error key for {@code @MutabilityLost} in adapted type parameter bounds. */
     private static final @CompilerMessageKey String LOST_IN_BOUNDS = "mutability.lost.in.bounds";
 
@@ -638,6 +643,73 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
             checker.reportError(tree, "array.new.invalid", type);
         }
         return super.visitNewArray(tree, p);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>As in Generic Universe Types, a receiver whose adapted type contains
+     * {@code @MutabilityLost} does not by itself block the call: only the adapted parameter types
+     * and method type-variable bounds must be free of it. A declared receiver may also requalify a
+     * type parameter of its class, as in {@code m(@Readonly Box<@ReceiverDependentMutable E>
+     * this)}. Such a written qualifier, adapted through the caller's receiver qualifier in the
+     * caller's mode, must not be {@code @MutabilityLost}: otherwise the caller cannot know which
+     * type argument the method asks for. A plain type argument {@code E} is exempt, because the
+     * callee reads it from the receiver object.
+     */
+    @Override
+    protected void checkMethodInvocability(
+            AnnotatedExecutableType method,
+            MethodInvocationTree tree,
+            @Nullable AnnotatedTypeMirror receiverType) {
+        if (!ElementUtils.isStatic(method.getElement())
+                && requalifiedReceiverArgumentIsLost(method, tree, receiverType)) {
+            checker.reportError(tree, LOST_RECEIVER);
+            return;
+        }
+        super.checkMethodInvocability(method, tree, receiverType);
+    }
+
+    /**
+     * Returns true if a type argument that the declared receiver of {@code method} requalifies
+     * adapts to {@code @MutabilityLost} through the receiver of {@code tree}.
+     *
+     * @param method the invoked method
+     * @param tree the method invocation
+     * @param receiverType the type of the receiver expression, or null to compute it
+     * @return true if a requalified receiver type argument adapts to {@code @MutabilityLost}
+     */
+    private boolean requalifiedReceiverArgumentIsLost(
+            AnnotatedExecutableType method,
+            MethodInvocationTree tree,
+            @Nullable AnnotatedTypeMirror receiverType) {
+        AnnotatedTypeMirror receiver =
+                receiverType != null ? receiverType : atypeFactory.getReceiverType(tree);
+        if (receiver == null) {
+            return false;
+        }
+        AnnotatedDeclaredType declaredReceiver =
+                atypeFactory.getAnnotatedType(method.getElement()).getReceiverType();
+        if (declaredReceiver == null) {
+            return false;
+        }
+        AnnotationMirror receiverQualifier =
+                receiver.getEffectiveAnnotationInHierarchy(atypeFactory.READONLY);
+        MethodMode mode = atypeFactory.getMethodModeOf(tree);
+        for (AnnotatedTypeMirror arg : declaredReceiver.getTypeArguments()) {
+            if (arg instanceof AnnotatedTypeVariable
+                    && ((AnnotatedTypeVariable) arg).getTypeVariableUsageKind()
+                            == AnnotatedTypeVariable.TypeVariableUsageKind.REQUALIFYING) {
+                AnnotationMirror written = arg.getAnnotationInHierarchy(atypeFactory.READONLY);
+                if (written != null
+                        && AnnotationUtils.areSame(
+                                atypeFactory.adaptQualifierInMode(mode, receiverQualifier, written),
+                                atypeFactory.LOST)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     @Override

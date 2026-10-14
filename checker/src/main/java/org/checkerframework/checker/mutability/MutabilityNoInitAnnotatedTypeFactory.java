@@ -163,6 +163,26 @@ public class MutabilityNoInitAnnotatedTypeFactory
     }
 
     /**
+     * Returns {@code declared} adapted as a value position through a receiver qualified {@code
+     * receiver}, in the scope {@code mode}.
+     *
+     * @param mode the method mode of the code that performs the adaptation
+     * @param receiver the receiver qualifier
+     * @param declared the declared qualifier
+     * @return the adapted qualifier
+     */
+    AnnotationMirror adaptQualifierInMode(
+            MethodMode mode, AnnotationMirror receiver, AnnotationMirror declared) {
+        methodModeStack.push(mode);
+        try {
+            return getMutabilityViewpointAdapter()
+                    .combineAnnotationWithAnnotation(receiver, declared);
+        } finally {
+            methodModeStack.pop();
+        }
+    }
+
+    /**
      * Returns the mutability viewpoint adapter.
      *
      * @return the viewpoint adapter, typed
