@@ -27,6 +27,7 @@ import org.checkerframework.dataflow.util.NodeUtils;
 import org.checkerframework.framework.qual.DefaultFor;
 import org.checkerframework.framework.type.AnnotatedTypeFactory;
 import org.checkerframework.framework.type.AnnotatedTypeMirror;
+import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedDeclaredType;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedExecutableType;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedTypeVariable;
 import org.checkerframework.framework.type.AnnotatedTypeParameterBounds;
@@ -291,6 +292,33 @@ public class MutabilityNoInitAnnotatedTypeFactory
     @Override
     protected boolean shouldCacheMethodAsMemberOf() {
         return !getCurrentMethodMode().changesValueAdaptation();
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The framework gives the refined type argument the declaration bound of the receiver's
+     * class. For {@code Object}, for arrays, and for a {@code @ReceiverDependentMutable} class that
+     * bound is {@code @ReceiverDependentMutable}, which would tie the type argument to the receiver
+     * of the enclosing method rather than to the receiver of {@code getClass()}, and which is
+     * forbidden in a static method. Such a class has both mutable and immutable instances, so the
+     * type argument's upper bound is {@code @Readonly}.
+     */
+    @Override
+    protected void adaptGetClassReturnTypeToReceiver(
+            AnnotatedExecutableType getClassType,
+            AnnotatedTypeMirror receiverType,
+            ExpressionTree tree) {
+        super.adaptGetClassReturnTypeToReceiver(getClassType, receiverType, tree);
+        AnnotatedTypeVariable typeArg =
+                (AnnotatedTypeVariable)
+                        ((AnnotatedDeclaredType) getClassType.getReturnType())
+                                .getTypeArguments()
+                                .get(0);
+        AnnotatedTypeMirror upperBound = typeArg.getUpperBound();
+        if (upperBound.hasAnnotation(RECEIVER_DEPENDENT_MUTABLE)) {
+            upperBound.replaceAnnotation(READONLY);
+        }
     }
 
     @Override
