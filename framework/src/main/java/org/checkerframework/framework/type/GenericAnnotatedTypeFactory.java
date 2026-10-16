@@ -2212,6 +2212,12 @@ public abstract class GenericAnnotatedTypeFactory<
     }
 
     @Override
+    protected void constructorFromUsePostViewpointAdaptation(
+            NewClassTree tree, AnnotatedExecutableType declaredType, AnnotatedExecutableType type) {
+        poly.resolve(tree, declaredType, type);
+    }
+
+    @Override
     public AnnotatedTypeMirror getMethodReturnType(MethodTree m) {
         AnnotatedTypeMirror returnType = super.getMethodReturnType(m);
         dependentTypesHelper.atMethodBody(returnType, m);
@@ -2628,6 +2634,14 @@ public abstract class GenericAnnotatedTypeFactory<
         if (tree instanceof MethodInvocationTree && resolvePolyQuals) {
             poly.resolve((MethodInvocationTree) tree, type);
         }
+    }
+
+    @Override
+    protected void methodFromUsePostViewpointAdaptation(
+            MethodInvocationTree tree,
+            AnnotatedExecutableType declaredType,
+            AnnotatedExecutableType type) {
+        poly.resolve(tree, declaredType, type);
     }
 
     @Override

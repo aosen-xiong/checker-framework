@@ -30,6 +30,8 @@ public class MutabilityFlowTest {
 
         @PolyMutable BaseClass testFlowInner(@PolyMutable BaseClass this) {
             BaseClass local = b;
+            // The @RDM field read through a @PolyMutable receiver is @MutabilityLost.
+            // :: error: (return.type.incompatible)
             return b;
         }
     }

@@ -77,19 +77,18 @@ public class ViewpointAdaptationBounds {
     }
 
     void callMethod(@Readonly Methods methods, @Mutable Object mutable) {
-        // The upper bound of T adapts to @MutabilityLost even though no argument compatibility
-        // check runs.
-        // :: error: (method.invocation.invalid) :: error: (mutability.lost.in.bounds)
+        // The @ReceiverDependentMutable receiver adapts to the call-site @Readonly receiver, so the
+        // call itself is allowed. The upper bound of T is a value position and adapts to
+        // @MutabilityLost even though no argument compatibility check runs.
+        // :: error: (mutability.lost.in.bounds)
         methods.methodWithNoArgs();
 
         // Use an explicit type argument to avoid testing type argument inference here.
-        // :: error: (method.invocation.invalid) :: error: (type.argument.type.incompatible) ::
-        // error: (mutability.lost.in.bounds)
+        // :: error: (type.argument.type.incompatible) :: error: (mutability.lost.in.bounds)
         methods.<@Mutable Object>method(mutable);
 
         // Even when using null, the adapted method type parameter bound is @MutabilityLost.
-        // :: error: (method.invocation.invalid) :: error: (mutability.lost.in.bounds) ::
-        // error: (mutability.lost.parameter)
+        // :: error: (mutability.lost.in.bounds) :: error: (mutability.lost.parameter)
         methods.method(null);
     }
 }

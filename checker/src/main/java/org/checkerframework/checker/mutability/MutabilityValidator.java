@@ -3,7 +3,9 @@ package org.checkerframework.checker.mutability;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
+import com.sun.source.util.TreeScanner;
 
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.common.basetype.BaseTypeChecker;
 import org.checkerframework.common.basetype.BaseTypeValidator;
 import org.checkerframework.common.basetype.BaseTypeVisitor;
@@ -132,9 +134,74 @@ public class MutabilityValidator extends BaseTypeValidator {
     private void checkStaticReceiverDependentMutableError(AnnotatedTypeMirror type, Tree tree) {
         if (!type.isDeclaration()
                 && TreePathUtil.isTreeInStaticScope(visitor.getCurrentPath())
+                && !isClassBoundClause(tree)
                 && type.hasAnnotation(mutabilityTypeFactory.RECEIVER_DEPENDENT_MUTABLE)) {
             reportValidityResult("static.receiverdependentmutable.forbidden", type, tree);
         }
+    }
+
+    /**
+     * Returns whether {@code tree} is, or is part of, the extends clause or one of the implements
+     * clauses of the enclosing class declaration.
+     *
+     * <p>Such a clause names a class BOUND, not a type use that needs a receiver, so
+     * {@code @ReceiverDependentMutable} is legal there even though a nested class or interface is
+     * implicitly static. The same holds inside the clause's type arguments, as in {@code implements
+     * Set<Map.@ReceiverDependentMutable Entry<K, V>>}: there it follows the mutability of the
+     * class's own instance. The validator passes the type-argument tree when it checks a type
+     * argument, so a tree nested in a clause is exempt too. {@code
+     * java.util.Spliterator.OfPrimitive} and {@code Collections.CheckedMap.CheckedEntrySet} are the
+     * motivating cases; see {@code tests/pico-mutable-default/StaticRdmExtendsClause.java} and
+     * {@code StaticRdmTypeArgumentInClause.java}.
+     *
+     * @param tree the tree being validated
+     * @return true if {@code tree} is or is inside an extends or implements clause of the enclosing
+     *     class
+     */
+    private boolean isClassBoundClause(Tree tree) {
+        ClassTree enclosing = TreePathUtil.enclosingClass(visitor.getCurrentPath());
+        if (enclosing == null) {
+            return false;
+        }
+        if (containsTree(enclosing.getExtendsClause(), tree)) {
+            return true;
+        }
+        for (Tree implemented : enclosing.getImplementsClause()) {
+            if (containsTree(implemented, tree)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns whether {@code target} is {@code root} or a tree nested in it.
+     *
+     * @param root the tree to search, or null
+     * @param target the tree to find
+     * @return true if {@code target} is {@code root} or occurs inside it
+     */
+    private static boolean containsTree(@Nullable Tree root, Tree target) {
+        if (root == null) {
+            return false;
+        }
+        Boolean found =
+                new TreeScanner<Boolean, Void>() {
+                    @Override
+                    @SuppressWarnings("interning:not.interned") // AST node comparison
+                    public Boolean scan(Tree node, Void p) {
+                        if (node == target) {
+                            return true;
+                        }
+                        return super.scan(node, p);
+                    }
+
+                    @Override
+                    public Boolean reduce(Boolean r1, Boolean r2) {
+                        return Boolean.TRUE.equals(r1) || Boolean.TRUE.equals(r2);
+                    }
+                }.scan(root, null);
+        return Boolean.TRUE.equals(found);
     }
 
     /**

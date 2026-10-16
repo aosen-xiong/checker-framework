@@ -6,6 +6,7 @@ import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.TargetType;
 
 import org.checkerframework.framework.type.AnnotatedTypeMirror;
+import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedTypeVariable;
 import org.checkerframework.framework.util.element.ElementAnnotationUtil.UnexpectedAnnotationLocationException;
 import org.checkerframework.javacutil.BugInCF;
 
@@ -102,7 +103,11 @@ public class VariableApplier extends TargetedElementAnnotationApplier {
                 TargetType.METHOD_REFERENCE_TYPE_ARGUMENT,
                 TargetType.CONSTRUCTOR_REFERENCE_TYPE_ARGUMENT,
                 TargetType.METHOD_FORMAL_PARAMETER,
-                TargetType.CLASS_EXTENDS
+                TargetType.CLASS_EXTENDS,
+                // TODO: Test cases from Issue 3277 and EISOP Issue 2290 produce invalid
+                // positions. Ignore until this javac bug is fixed:
+                // https://bugs.openjdk.org/browse/JDK-8233945
+                TargetType.UNKNOWN
             };
 
     @Override
@@ -124,6 +129,9 @@ public class VariableApplier extends TargetedElementAnnotationApplier {
     protected void handleTargeted(List<TypeCompound> targeted)
             throws UnexpectedAnnotationLocationException {
         ElementAnnotationUtil.annotateViaTypeAnnoPosition(type, targeted);
+        if (type instanceof AnnotatedTypeVariable && !targeted.isEmpty()) {
+            ((AnnotatedTypeVariable) type).markAsRequalifyingTypeVariableUsage(targeted);
+        }
     }
 
     @Override

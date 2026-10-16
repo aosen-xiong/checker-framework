@@ -296,10 +296,23 @@ Other improvements and bug fixes:
 - Viewpoint adaptation no longer crashes on raw F-bounded classes; new
   `viewpointAdaptTypeDeclarationBounds` and `extractAnnotationMirror` hooks.
   Viewpoint-adapting checkers can now extend types with receiver-dependent bounds.
+- Polymorphic qualifiers of an invoked method or constructor are now
+  instantiated after viewpoint adaptation, like type arguments, so the
+  receiver's viewpoint no longer rewrites the instantiation. New
+  `QualifierPolymorphism.resolve` overloads and
+  `AnnotatedTypeFactory.methodFromUsePostViewpointAdaptation` and
+  `constructorFromUsePostViewpointAdaptation` hooks; with a `ViewpointAdapter`,
+  `methodFromUsePreSubstitution` and `constructorFromUsePreSubstitution` no
+  longer resolve these polymorphic qualifiers. The constructor of an anonymous
+  class is now viewpoint-adapted once rather than twice.
 - Viewpoint adaptation no longer overflows the stack when computing the
   supertypes of a type whose type argument is a type variable of another class,
   such as `Seq<E>` in `interface Coll<E> { void m(Seq<E> s); }`, or any member
   access on a three-deep generic interface such as `java.util.List`.
+- Viewpoint adaptation no longer crashes when checking an override of, or a
+  method reference with a raw type such as `Ord::rev` to, a method whose type
+  variable is bounded by a class type variable, such as
+  `<S extends T> Ord<S> rev()` in `class Ord<T>`.
 - `-AcheckCastElementType` fixes: no longer crashes on downcasts, incomparable
   types, null literal casts, or differing type-argument counts.
 - `BinaryStubFileGenerator` accepts a file, directory (`--bundle`), or jar.
@@ -437,6 +450,8 @@ eisop#2159,
 eisop#2160,
 eisop#2187,
 eisop#2224,
+eisop#2233,
+eisop#2287,
 typetools#399,
 typetools#2816,
 typetools#3203,
