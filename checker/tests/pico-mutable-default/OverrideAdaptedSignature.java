@@ -50,10 +50,10 @@ import org.checkerframework.checker.mutability.qual.ReceiverDependentMutable;
     @Override
     <T extends @Readonly Object> void bounded(@Readonly OvMutableSub this, T t) {}
 
-    // A narrower type-parameter bound is rejected, and the parameter of that type no longer
-    // matches.
+    // A narrower type-parameter bound is rejected. This is reported once, for the type
+    // parameter, not again for the parameter that uses it.
     @Override
-    // :: error: (override.typaram.invalid) :: error: (override.param.invalid)
+    // :: error: (override.typaram.invalid)
     <T extends @Immutable Object> void boundedReadonly(@Readonly OvMutableSub this, T t) {}
 }
 
