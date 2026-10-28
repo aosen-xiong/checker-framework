@@ -49,7 +49,8 @@ public @ReceiverDependentMutable class ReimStudy {
         // q(this-cellGetHours) |> @PolyImmutable <: @Readonly => q(this-cellGetHours) <: @Readonly
         // So cellGetHours is invocable on any types of receiver.
         // In inference, if we prefer top(@Readonly), it still infers current "this" to @Readonly.
-        // :: error: (method.invocation.invalid)
+        // The @ReceiverDependentMutable receiver of getDate() adapts to the @Readonly call site, so
+        // the call is allowed. Its return adapts to @MutabilityLost, which is a @Readonly.
         @Readonly Date rd = this.getDate();
         int hour = rd.getHours();
     }

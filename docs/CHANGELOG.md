@@ -434,6 +434,15 @@ Other improvements and bug fixes:
 - Viewpoint adaptation no longer crashes on raw F-bounded classes; new
   `viewpointAdaptTypeDeclarationBounds` and `extractAnnotationMirror` hooks.
   Viewpoint-adapting checkers can now extend types with receiver-dependent bounds.
+- Polymorphic qualifiers of an invoked method or constructor are now
+  instantiated after viewpoint adaptation, like type arguments, so the
+  receiver's viewpoint no longer rewrites the instantiation. New
+  `QualifierPolymorphism.resolve` overloads and
+  `AnnotatedTypeFactory.methodFromUsePostViewpointAdaptation` and
+  `constructorFromUsePostViewpointAdaptation` hooks; with a `ViewpointAdapter`,
+  `methodFromUsePreSubstitution` and `constructorFromUsePreSubstitution` no
+  longer resolve these polymorphic qualifiers. The constructor of an anonymous
+  class is now viewpoint-adapted once rather than twice.
 - Viewpoint adaptation no longer overflows the stack when computing the
   supertypes of a type whose type argument is a type variable of another class,
   such as `Seq<E>` in `interface Coll<E> { void m(Seq<E> s); }`, or any member
@@ -640,6 +649,7 @@ eisop#2164,
 eisop#2179,
 eisop#2187,
 eisop#2224,
+eisop#2233,
 eisop#2258,
 eisop#2259,
 eisop#2260,

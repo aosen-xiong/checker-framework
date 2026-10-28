@@ -30,4 +30,22 @@ class AnonymousClasses {
         // :: error: (constructor.invocation.invalid) :: error: (constructor.return.invalid)
         new @Readonly RDMClass() {};
     }
+
+    // An anonymous class has no declaration of its own. Without an explicit qualifier on the
+    // creation expression it must take the bound of the type it extends or implements;
+    // otherwise an @Immutable supertype yields @Readonly, which no context accepts and which
+    // cannot be corrected at the use site -- there is nowhere to write a qualifier on
+    // `new Base() {}` once the creation expression is left bare.
+    @Immutable ImmutableClass immutableSupertypeGivesImmutable() {
+        return new ImmutableClass() {};
+    }
+
+    @Mutable MutableClass mutableSupertypeGivesMutable() {
+        return new MutableClass() {};
+    }
+
+    // A @ReceiverDependentMutable supertype still yields the concrete creation qualifier.
+    @Mutable RDMClass rdmSupertypeGivesMutable() {
+        return new RDMClass() {};
+    }
 }
