@@ -1,5 +1,6 @@
 package org.checkerframework.checker.mutability;
 
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.framework.type.AbstractViewpointAdapter;
 import org.checkerframework.framework.type.AnnotatedTypeFactory;
 import org.checkerframework.framework.type.AnnotatedTypeMirror;
@@ -92,6 +93,31 @@ public class MutabilityViewpointAdapter extends AbstractViewpointAdapter {
         }
 
         throw new BugInCF("Unknown declared qualifier: " + declaredAnnotation);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>A {@code @ReceiverDependentMutable} type argument in an {@code extends} clause becomes
+     * {@code @Mutable}, {@code @Immutable}, {@code @ReceiverDependentMutable}, or the bottom
+     * qualifier, so each of these widens to {@code @MutabilityLost}. {@code @Readonly} and
+     * {@code @MutabilityLost} are kept. {@code @PolyMutable} is a qualifier parameter that a call
+     * supplies, so it cannot be widened.
+     */
+    @Override
+    protected @Nullable AnnotationMirror widenTypeArgumentQualifier(AnnotationMirror qualifier) {
+        if (AnnotationUtils.areSame(qualifier, mutabilityTypeFactory.READONLY)
+                || AnnotationUtils.areSame(qualifier, mutabilityTypeFactory.LOST)) {
+            return qualifier;
+        }
+        if (AnnotationUtils.areSame(qualifier, mutabilityTypeFactory.MUTABLE)
+                || AnnotationUtils.areSame(qualifier, mutabilityTypeFactory.IMMUTABLE)
+                || AnnotationUtils.areSame(
+                        qualifier, mutabilityTypeFactory.RECEIVER_DEPENDENT_MUTABLE)
+                || AnnotationUtils.areSame(qualifier, mutabilityTypeFactory.BOTTOM)) {
+            return mutabilityTypeFactory.LOST;
+        }
+        return null;
     }
 
     /**

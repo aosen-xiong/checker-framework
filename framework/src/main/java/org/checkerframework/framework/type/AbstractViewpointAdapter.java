@@ -1,5 +1,6 @@
 package org.checkerframework.framework.type;
 
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.dataflow.qual.SideEffectFree;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedArrayType;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedDeclaredType;
@@ -9,9 +10,11 @@ import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedTypeVari
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedTypeVariable.TypeVariableUsageKind;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedWildcardType;
 import org.checkerframework.javacutil.AnnotationMirrorSet;
+import org.checkerframework.javacutil.AnnotationUtils;
 import org.checkerframework.javacutil.ElementUtils;
 import org.checkerframework.javacutil.Pair;
 
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 
@@ -256,6 +259,127 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
                 .getAnnotations();
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>This implementation widens each qualifier of the type arguments with {@link
+     * #widenTypeArgumentQualifier}. It applies only when the bound is a class type whose type
+     * arguments are ground: built from class, array, and primitive types at every depth, with no
+     * type variable, wildcard, or qualifier that cannot be widened. A later substitution can supply
+     * a qualifier inside a type variable, which widening here cannot reach.
+     */
+    @Override
+    public @Nullable AnnotatedTypeMirror widenRequalifiedUpperBound(
+            AnnotatedTypeMirror upperBound) {
+        if (upperBound.getKind() != TypeKind.DECLARED) {
+            return null;
+        }
+        AnnotationMirror mainQualifier = extractAnnotationMirror(upperBound);
+        if (mainQualifier == null || atypeFactory.getQualifierHierarchy().isBottom(mainQualifier)) {
+            // Only null has a bottom-qualified type, so its view of the bound reaches no object.
+            // Type argument inference instantiates a type parameter to such a use.
+            return null;
+        }
+        List<AnnotatedTypeMirror> typeArgs =
+                ((AnnotatedDeclaredType) upperBound).getTypeArguments();
+        if (typeArgs.isEmpty()) {
+            return null;
+        }
+        boolean changes = false;
+        for (AnnotatedTypeMirror typeArg : typeArgs) {
+            Boolean argChanges = groundAndWidens(typeArg);
+            if (argChanges == null) {
+                return null;
+            }
+            changes |= argChanges;
+        }
+        if (!changes) {
+            return null;
+        }
+        AnnotatedDeclaredType widened = (AnnotatedDeclaredType) upperBound.deepCopy(true);
+        for (AnnotatedTypeMirror typeArg : widened.getTypeArguments()) {
+            widenGround(typeArg);
+        }
+        return widened;
+    }
+
+    /**
+     * Returns the qualifier that {@code qualifier} is widened to in a type argument of the upper
+     * bound of a type-variable use written {@code @q X}; see {@link #widenRequalifiedUpperBound}. A
+     * qualifier that a receiver-dependent qualifier can become through some reference is widened to
+     * the qualifier that forgets which one it was. A qualifier it cannot become is returned
+     * unchanged.
+     *
+     * <p>The default implementation returns null, so that no upper bound is widened.
+     *
+     * @param qualifier a qualifier in this adapter's hierarchy
+     * @return the widened qualifier, or null if {@code qualifier} cannot be widened soundly, such
+     *     as a qualifier parameter that a call supplies later
+     */
+    protected @Nullable AnnotationMirror widenTypeArgumentQualifier(AnnotationMirror qualifier) {
+        return null;
+    }
+
+    /**
+     * Returns whether widening would change {@code type}, or null if {@code type} is not ground.
+     *
+     * @param type a type argument, or a component of one
+     * @return true if widening changes {@code type}, false if it does not, and null if {@code type}
+     *     is not ground
+     */
+    private @Nullable Boolean groundAndWidens(AnnotatedTypeMirror type) {
+        TypeKind kind = type.getKind();
+        if (kind != TypeKind.DECLARED && kind != TypeKind.ARRAY && !kind.isPrimitive()) {
+            return null;
+        }
+        AnnotationMirror qualifier = extractAnnotationMirror(type);
+        if (qualifier == null) {
+            return null;
+        }
+        AnnotationMirror widened = widenTypeArgumentQualifier(qualifier);
+        if (widened == null) {
+            return null;
+        }
+        boolean changes = !AnnotationUtils.areSame(qualifier, widened);
+        List<AnnotatedTypeMirror> components;
+        if (kind == TypeKind.DECLARED) {
+            components = ((AnnotatedDeclaredType) type).getTypeArguments();
+        } else if (kind == TypeKind.ARRAY) {
+            components = Collections.singletonList(((AnnotatedArrayType) type).getComponentType());
+        } else {
+            components = Collections.emptyList();
+        }
+        for (AnnotatedTypeMirror component : components) {
+            Boolean componentChanges = groundAndWidens(component);
+            if (componentChanges == null) {
+                return null;
+            }
+            changes |= componentChanges;
+        }
+        return changes;
+    }
+
+    /**
+     * Widens every qualifier of {@code type}, which {@link #groundAndWidens} has found ground, in
+     * place.
+     *
+     * @param type a ground type argument, or a component of one
+     */
+    private void widenGround(AnnotatedTypeMirror type) {
+        AnnotationMirror qualifier = extractAnnotationMirror(type);
+        AnnotationMirror widened = widenTypeArgumentQualifier(qualifier);
+        if (widened != null) {
+            type.replaceAnnotation(widened);
+        }
+        if (type.getKind() == TypeKind.DECLARED) {
+            for (AnnotatedTypeMirror typeArg : ((AnnotatedDeclaredType) type).getTypeArguments()) {
+                widenGround(typeArg);
+            }
+        } else if (type.getKind() == TypeKind.ARRAY) {
+            widenGround(((AnnotatedArrayType) type).getComponentType());
+        }
+    }
+
     @Override
     public AnnotatedTypeMirror viewpointAdaptType(
             AnnotatedTypeMirror receiverType, AnnotatedTypeMirror declaredType) {
@@ -317,7 +441,7 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
         AnnotatedTypeMirror result = declared;
 
         if (receiver.getKind() == TypeKind.TYPEVAR) {
-            receiver = ((AnnotatedTypeVariable) receiver).getUpperBound();
+            receiver = atypeFactory.getTypeVariableUseView((AnnotatedTypeVariable) receiver);
         }
         AnnotationMirror receiverAnnotation = extractAnnotationMirror(receiver);
         if (receiverAnnotation != null) {

@@ -1283,7 +1283,8 @@ public class DefaultTypeHierarchy extends AbstractAtmComboVisitor<Boolean, Void>
      */
     protected boolean visitTypevar_Type(
             AnnotatedTypeVariable subtype, AnnotatedTypeMirror supertype) {
-        AnnotatedTypeMirror subtypeUpperBound = subtype.getUpperBound();
+        AnnotatedTypeMirror subtypeUpperBound =
+                subtype.atypeFactory.getTypeVariableUseView(subtype);
         if (TypesUtils.isBoxedPrimitive(subtypeUpperBound.getUnderlyingType())
                 && supertype instanceof AnnotatedPrimitiveType) {
             subtypeUpperBound =

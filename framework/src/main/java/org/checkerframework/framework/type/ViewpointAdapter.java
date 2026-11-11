@@ -1,5 +1,6 @@
 package org.checkerframework.framework.type;
 
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedExecutableType;
 import org.checkerframework.javacutil.AnnotationMirrorSet;
 
@@ -104,4 +105,25 @@ public interface ViewpointAdapter {
      */
     AnnotatedTypeMirror viewpointAdaptType(
             AnnotatedTypeMirror receiverType, AnnotatedTypeMirror declaredType);
+
+    /**
+     * Returns the upper bound that a type-variable use written with a qualifier of its own, as in
+     * {@code @q X}, is viewed through, or null if that is {@code upperBound} unchanged.
+     *
+     * <p>{@code upperBound} is the upper bound of {@code X} with its main qualifier replaced by
+     * {@code q}. Its type arguments need not be those of the type argument that {@code X} stands
+     * for: a class that extends {@code C<@ReceiverDependent T>} passes a type argument whose
+     * qualifier depends on the qualifier of the reference, which {@code q} has just replaced. An
+     * implementation returns a copy of {@code upperBound} in which every qualifier of its type
+     * arguments that such a dependency can produce is widened to one that forgets it (eisop#2296).
+     *
+     * <p>The default implementation returns null, which keeps the type arguments as declared.
+     *
+     * @param upperBound the upper bound of a type-variable use, with the use's main qualifier
+     * @return the widened upper bound, or null if {@code upperBound} is unchanged
+     */
+    default @Nullable AnnotatedTypeMirror widenRequalifiedUpperBound(
+            AnnotatedTypeMirror upperBound) {
+        return null;
+    }
 }

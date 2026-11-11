@@ -2919,6 +2919,31 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
     }
 
     /**
+     * Returns the upper bound through which members of a type-variable use are looked up and
+     * through which the use is a subtype of a class type.
+     *
+     * <p>For a use written bare, as {@code X}, this is the upper bound of {@code X}. For a use
+     * written {@code @q X}, the viewpoint adapter may widen the type arguments of the bound,
+     * because {@code @q} replaces the main qualifier of the type argument that {@code X} stands for
+     * and a receiver-dependent superclass argument of that type follows it (eisop#2296). See {@link
+     * ViewpointAdapter#widenRequalifiedUpperBound}.
+     *
+     * @param typeVariable a type-variable use
+     * @return the upper bound through which {@code typeVariable} is viewed
+     */
+    public AnnotatedTypeMirror getTypeVariableUseView(AnnotatedTypeVariable typeVariable) {
+        AnnotatedTypeMirror upperBound = typeVariable.getUpperBound();
+        if (viewpointAdapter == null
+                || typeVariable.isDeclaration()
+                || typeVariable.getTypeVariableUsageKind()
+                        != AnnotatedTypeVariable.TypeVariableUsageKind.REQUALIFYING) {
+            return upperBound;
+        }
+        AnnotatedTypeMirror widened = viewpointAdapter.widenRequalifiedUpperBound(upperBound);
+        return widened == null ? upperBound : widened;
+    }
+
+    /**
      * Adapt the upper bounds of the type variables of a class relative to the type instantiation.
      * In some type systems, the upper bounds depend on the instantiation of the class. For example,
      * in the Generic Universe Type system, consider a class declaration
