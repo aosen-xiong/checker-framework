@@ -7,6 +7,14 @@
 
 ### User-visible changes
 
+The Mutability Checker can check lazily initialized fields of immutable classes, such
+as `String.hash`. With `-AcheckDerivedFields`, a field annotated `@Derived` must be read
+at most once per path, written only with derived values, and its value must not change a
+method's result; this reports methods that read such a field twice, which the Java Memory
+Model allows to return a stale value. `-AinferDerived` checks unannotated fields that look
+lazily initialized, and `-AsuggestValueClasses` reports immutable classes whose fields are
+all abstract state or derived fields.
+
 Performance improvements over 3.49.5-eisop1:
 
 - `allNullnessTests`: 1m24s vs. 2m16s

@@ -885,6 +885,7 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
                 }
             }
         }
+        new MutabilityDerivedFieldChecker(checker, atypeFactory).checkClass(tree);
         super.processClassTree(tree);
     }
 }

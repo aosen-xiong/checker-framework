@@ -7,7 +7,13 @@ import org.checkerframework.common.basetype.BaseTypeChecker;
 import javax.annotation.processing.SupportedOptions;
 
 /** The mutability checker. */
-@SupportedOptions({"assumeInitialized"})
+@SupportedOptions({
+    "allowReadAfterOwnWrite",
+    "assumeInitialized",
+    "checkDerivedFields",
+    "inferDerived",
+    "suggestValueClasses"
+})
 public class MutabilityChecker extends InitializationChecker {
 
     /** Default constructor for MutabilityChecker. */
