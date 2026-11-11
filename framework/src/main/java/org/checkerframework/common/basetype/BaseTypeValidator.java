@@ -11,6 +11,7 @@ import com.sun.source.tree.ParameterizedTypeTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.VariableTree;
+import com.sun.source.util.TreePath;
 
 import org.checkerframework.checker.compilermsgs.qual.CompilerMessageKey;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -25,6 +26,7 @@ import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedDeclared
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedIntersectionType;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedPrimitiveType;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedTypeVariable;
+import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedTypeVariable.TypeVariableUsageKind;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedWildcardType;
 import org.checkerframework.framework.type.AnnotatedTypeParameterBounds;
 import org.checkerframework.framework.type.QualifierHierarchy;
@@ -55,6 +57,7 @@ import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.type.TypeVariable;
@@ -757,6 +760,75 @@ public class BaseTypeValidator extends AnnotatedTypeScanner<Void, Tree> implemen
     }
 
     /**
+     * Returns true if {@code typeTree} is the type of the receiver parameter of the method being
+     * visited, as in {@code void m(@Q Box<X> this)}.
+     *
+     * @param typeTree a type tree
+     * @return true if {@code typeTree} is the type of a method's receiver parameter
+     */
+    private boolean isMethodReceiverType(Tree typeTree) {
+        TreePath path = visitor.getCurrentPath();
+        if (path == null || path.getParentPath() == null) {
+            return false;
+        }
+        Tree leaf = path.getLeaf();
+        Tree parent = path.getParentPath().getLeaf();
+        if (!(leaf instanceof VariableTree)
+                || !(parent instanceof MethodTree)
+                || ((MethodTree) parent).getReceiverParameter() != leaf) {
+            return false;
+        }
+        Tree receiverType = ((VariableTree) leaf).getType();
+        if (receiverType instanceof AnnotatedTypeTree) {
+            receiverType = ((AnnotatedTypeTree) receiverType).getUnderlyingType();
+        }
+        return receiverType == typeTree;
+    }
+
+    /**
+     * Returns {@code bounds} with the bound of each type parameter that {@code type} passes through
+     * unchanged replaced by that type parameter's own bounds, so that the type argument is within
+     * it.
+     *
+     * <p>A method receiver {@code @Q Box<X> this} inside {@code Box} names the type of "this",
+     * which is every instance of {@code Box}. Its type argument {@code X} is not a choice the
+     * receiver makes, so checking it against {@code X}'s bound adapted through {@code @Q} compares
+     * two views of the same type parameter. A member read through the receiver adapts {@code X}'s
+     * bound instead (eisop#2516).
+     *
+     * @param bounds the bounds of {@code element}'s type parameters, adapted through {@code type}
+     * @param type a use of {@code element} that is a method receiver type
+     * @param element the type element whose type parameters {@code bounds} belong to
+     * @return {@code bounds}, or a copy with the bounds of passed-through type parameters replaced
+     */
+    private List<AnnotatedTypeParameterBounds> boundsForOwnTypeParameters(
+            List<AnnotatedTypeParameterBounds> bounds,
+            AnnotatedDeclaredType type,
+            TypeElement element) {
+        List<AnnotatedTypeMirror> typeArgs = type.getTypeArguments();
+        List<? extends TypeParameterElement> typeParams = element.getTypeParameters();
+        if (typeArgs.size() != bounds.size() || typeParams.size() != bounds.size()) {
+            return bounds;
+        }
+        List<AnnotatedTypeParameterBounds> result = null;
+        for (int i = 0; i < typeArgs.size(); i++) {
+            AnnotatedTypeMirror typeArg = typeArgs.get(i);
+            if (typeArg.getKind() != TypeKind.TYPEVAR) {
+                continue;
+            }
+            AnnotatedTypeVariable typeVar = (AnnotatedTypeVariable) typeArg;
+            if (typeVar.getTypeVariableUsageKind() == TypeVariableUsageKind.PLAIN
+                    && typeVar.getUnderlyingType().asElement().equals(typeParams.get(i))) {
+                if (result == null) {
+                    result = new ArrayList<>(bounds);
+                }
+                result.set(i, typeVar.getBounds());
+            }
+        }
+        return result == null ? bounds : result;
+    }
+
+    /**
      * Checks that the annotations on the type arguments supplied to a type or a method invocation
      * are within the bounds of the type variables as declared, and issues the
      * "type.argument.type.incompatible" error if they are not.
@@ -781,6 +853,9 @@ public class BaseTypeValidator extends AnnotatedTypeScanner<Void, Tree> implemen
                 (AnnotatedDeclaredType) atypeFactory.applyCaptureConversion(type);
         List<AnnotatedTypeParameterBounds> bounds =
                 atypeFactory.typeVariablesFromUse(capturedType, element);
+        if (isMethodReceiverType(tree)) {
+            bounds = boundsForOwnTypeParameters(bounds, capturedType, element);
+        }
 
         visitor.checkTypeArguments(
                 tree,

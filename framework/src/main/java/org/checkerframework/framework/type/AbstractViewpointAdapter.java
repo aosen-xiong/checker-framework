@@ -70,6 +70,18 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
             AnnotatedArrayType aatType = (AnnotatedArrayType) memberType;
             AnnotatedArrayType aatCombinedType = (AnnotatedArrayType) combinedType;
             aatType.setComponentType(aatCombinedType.getComponentType());
+        } else if (memberType.getKind() == TypeKind.TYPEVAR
+                && combinedType.getKind() == TypeKind.TYPEVAR) {
+            // A type variable's bounds are adapted like any other part of the member's type, as
+            // in "X item" read through a "@Q Box<X>" receiver inside Box (eisop#2516).
+            AnnotatedTypeVariable atvType = (AnnotatedTypeVariable) memberType;
+            AnnotatedTypeVariable atvCombinedType = (AnnotatedTypeVariable) combinedType;
+            if (atvType.getUnderlyingType()
+                    .asElement()
+                    .equals(atvCombinedType.getUnderlyingType().asElement())) {
+                atvType.setUpperBound(atvCombinedType.getUpperBound());
+                atvType.setLowerBound(atvCombinedType.getLowerBound());
+            }
         }
     }
 
@@ -541,8 +553,17 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
         int foundindex = res.second;
 
         List<AnnotatedTypeMirror> tas = decltype.getTypeArguments();
+        AnnotatedTypeMirror typeArgument = tas.get(foundindex);
+        if (isPlainUseOf(typeArgument, var)) {
+            // The receiver passes the type parameter through unchanged, as the receiver of a
+            // method does inside the parameter's own class.  The type argument is then var's own
+            // type parameter, so substituting it would only undo the adaptation of var through
+            // the receiver: of its bounds, and of its qualifier if the usage is written "@q E"
+            // (eisop#2516).  This is not a capture, so the caveat below does not apply.
+            return var;
+        }
         // return a copy, as we want to modify the type later.
-        AnnotatedTypeMirror result = tas.get(foundindex).shallowCopy(true);
+        AnnotatedTypeMirror result = typeArgument.shallowCopy(true);
         if (var.getTypeVariableUsageKind() == TypeVariableUsageKind.REQUALIFYING
                 && result.getKind() != TypeKind.TYPEVAR) {
             // Requalifying replaces the argument's own head qualifier.  A type variable -- in
@@ -569,6 +590,27 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
             }
         }
         return result;
+    }
+
+    /**
+     * Returns true if {@code typeArgument} is a use of the same type parameter as {@code var},
+     * written bare.
+     *
+     * @param typeArgument a type argument
+     * @param var a type variable
+     * @return true if {@code typeArgument} is a bare use of {@code var}'s type parameter
+     */
+    private static boolean isPlainUseOf(
+            AnnotatedTypeMirror typeArgument, AnnotatedTypeVariable var) {
+        if (typeArgument.getKind() != TypeKind.TYPEVAR) {
+            return false;
+        }
+        AnnotatedTypeVariable typeVariable = (AnnotatedTypeVariable) typeArgument;
+        return typeVariable.getTypeVariableUsageKind() == TypeVariableUsageKind.PLAIN
+                && typeVariable
+                        .getUnderlyingType()
+                        .asElement()
+                        .equals(var.getUnderlyingType().asElement());
     }
 
     /**
