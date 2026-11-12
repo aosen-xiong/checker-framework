@@ -288,6 +288,51 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
     }
 
     /**
+     * {@inheritDoc}
+     *
+     * <p>Compares the return types in the mode of the overriding method, which an override shares
+     * with the overridden method. In readonly-state and transitive-state, a {@code @Mutable} type
+     * argument in an {@code extends} clause is lost through every receiver that is not
+     * {@code @Mutable}, so an override in a {@code @ReadonlyState} method may not return an
+     * {@code @Readonly C}, where {@code C extends P<@Mutable Data>}, for a {@code @Readonly
+     * P<@Mutable Data>}. A caller of the overridden method would get a mutable reference to an
+     * object that existed when the call started.
+     */
+    @Override
+    protected OverrideChecker createOverrideChecker(
+            Tree overriderTree,
+            AnnotatedExecutableType overriderMethodType,
+            AnnotatedTypeMirror overriderType,
+            AnnotatedTypeMirror overriderReturnType,
+            AnnotatedExecutableType overriddenMethodType,
+            AnnotatedDeclaredType overriddenType,
+            AnnotatedTypeMirror overriddenReturnType) {
+        MethodMode mode =
+                overriderTree instanceof MethodTree
+                        ? atypeFactory.getMethodMode(overriderMethodType.getElement())
+                        : MethodMode.ABSTRACT_STATE;
+        return new OverrideChecker(
+                overriderTree,
+                overriderMethodType,
+                overriderType,
+                overriderReturnType,
+                overriddenMethodType,
+                overriddenType,
+                overriddenReturnType) {
+            @Override
+            protected boolean isReturnOverrideValid(
+                    AnnotatedTypeMirror requiredReturnType, AnnotatedTypeMirror actualReturnType) {
+                atypeFactory.pushMethodMode(mode);
+                try {
+                    return super.isReturnOverrideValid(requiredReturnType, actualReturnType);
+                } finally {
+                    atypeFactory.popMethodMode();
+                }
+            }
+        };
+    }
+
+    /**
      * The body of the method that {@link #processMethodTree} is checking, or null outside a method.
      */
     private @Nullable Tree methodBody;
