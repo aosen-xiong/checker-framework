@@ -2944,6 +2944,16 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
     }
 
     /**
+     * Returns true if this factory viewpoint-adapts types, so that the bounds of a type-variable
+     * use can depend on the receiver it was viewed through.
+     *
+     * @return true if this factory has a viewpoint adapter
+     */
+    public boolean adaptsTypeVariableBounds() {
+        return viewpointAdapter != null;
+    }
+
+    /**
      * Returns true if the members of a type-variable use are reachable through {@link
      * #getTypeVariableUseView}. This is false only for a use written {@code @q X} whose bound has
      * type arguments that the viewpoint adapter cannot widen; see {@link
