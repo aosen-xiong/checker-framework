@@ -7,7 +7,7 @@ import org.checkerframework.common.basetype.BaseTypeChecker;
 import javax.annotation.processing.SupportedOptions;
 
 /** The mutability checker. */
-@SupportedOptions({"assumeInitialized"})
+@SupportedOptions({"assumeInitialized", "sideEffectFreeAsTransitiveState"})
 public class MutabilityChecker extends InitializationChecker {
 
     /** Default constructor for MutabilityChecker. */

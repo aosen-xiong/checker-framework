@@ -23,6 +23,8 @@ import org.checkerframework.checker.mutability.qual.Readonly;
 import org.checkerframework.checker.mutability.qual.ReceiverDependentMutable;
 import org.checkerframework.common.basetype.BaseTypeChecker;
 import org.checkerframework.dataflow.cfg.node.Node;
+import org.checkerframework.dataflow.qual.Pure;
+import org.checkerframework.dataflow.qual.SideEffectFree;
 import org.checkerframework.dataflow.util.NodeUtils;
 import org.checkerframework.framework.qual.DefaultFor;
 import org.checkerframework.framework.type.AnnotatedTypeFactory;
@@ -130,6 +132,7 @@ public class MutabilityNoInitAnnotatedTypeFactory
     @SuppressWarnings("this-escape")
     public MutabilityNoInitAnnotatedTypeFactory(BaseTypeChecker checker) {
         super(checker);
+        sideEffectFreeAsTransitiveState = checker.hasOption("sideEffectFreeAsTransitiveState");
         addAliasedTypeAnnotation(org.jmlspecs.annotation.Readonly.class, READONLY);
         postInit();
     }
@@ -246,7 +249,32 @@ public class MutabilityNoInitAnnotatedTypeFactory
                 modes.add(mode);
             }
         }
+        if (modes.isEmpty()
+                && sideEffectFreeAsTransitiveState
+                && isDeclaredSideEffectFree(method)) {
+            modes.add(MethodMode.TRANSITIVE_STATE);
+        }
         return modes;
+    }
+
+    /**
+     * Whether a method annotated {@link SideEffectFree} or {@link Pure}, and with no mode of its
+     * own, is checked in {@link MethodMode#TRANSITIVE_STATE}. Set by the option {@code
+     * -AsideEffectFreeAsTransitiveState}. A side-effect-free method modifies no object that exists
+     * when it is called, which transitive-state checks. {@link Pure} is not checked by this
+     * checker, so treating it as transitive-state is not sound.
+     */
+    private final boolean sideEffectFreeAsTransitiveState;
+
+    /**
+     * Returns true if {@code method} is annotated {@link SideEffectFree} or {@link Pure}.
+     *
+     * @param method a method
+     * @return true if {@code method} is declared side-effect-free
+     */
+    private boolean isDeclaredSideEffectFree(ExecutableElement method) {
+        return getDeclAnnotation(method, SideEffectFree.class) != null
+                || getDeclAnnotation(method, Pure.class) != null;
     }
 
     /**
