@@ -272,7 +272,51 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
             }
         }
 
-        super.processMethodTree(className, tree);
+        Tree outerBody = methodBody;
+        MethodMode outerMode = methodBodyMode;
+        methodBody = tree.getBody();
+        methodBodyMode =
+                methodElement == null
+                        ? MethodMode.ABSTRACT_STATE
+                        : atypeFactory.getMethodMode(methodElement);
+        try {
+            super.processMethodTree(className, tree);
+        } finally {
+            methodBody = outerBody;
+            methodBodyMode = outerMode;
+        }
+    }
+
+    /**
+     * The body of the method that {@link #processMethodTree} is checking, or null outside a method.
+     */
+    private @Nullable Tree methodBody;
+
+    /** The mode of {@link #methodBody}. */
+    private MethodMode methodBodyMode = MethodMode.ABSTRACT_STATE;
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Scans a method body in the method's mode. The type factory adapts in the mode of the tree
+     * it is asked to type, but the subtyping checks this visitor performs on those types, such as
+     * the one for an assignment, adapt the type arguments a class passes to its superclass on their
+     * own. In readonly-state and transitive-state, a {@code @Mutable} type argument in an {@code
+     * extends} clause is lost through every receiver that is not {@code @Mutable}, so an
+     * {@code @Immutable Foo}, where {@code Foo extends P<@Mutable Data>}, is not a {@code @Readonly
+     * P<@Mutable Data>} there.
+     */
+    @Override
+    public Void scan(@Nullable Tree tree, Void p) {
+        if (tree == null || tree != methodBody) {
+            return super.scan(tree, p);
+        }
+        atypeFactory.pushMethodMode(methodBodyMode);
+        try {
+            return super.scan(tree, p);
+        } finally {
+            atypeFactory.popMethodMode();
+        }
     }
 
     /**
@@ -838,8 +882,28 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
         return AnnotationMirrorSet.singleton(atypeFactory.READONLY);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>A class nested in a method body is outside that method's mode: its field initializers are
+     * in {@link MethodMode#ABSTRACT_STATE} and each of its methods is in its own mode.
+     */
     @Override
     public void processClassTree(ClassTree tree) {
+        atypeFactory.pushMethodMode(MethodMode.ABSTRACT_STATE);
+        try {
+            processClassTreeInAbstractState(tree);
+        } finally {
+            atypeFactory.popMethodMode();
+        }
+    }
+
+    /**
+     * The body of {@link #processClassTree}, run in {@link MethodMode#ABSTRACT_STATE}.
+     *
+     * @param tree the class to check
+     */
+    private void processClassTreeInAbstractState(ClassTree tree) {
         TypeElement typeElement = TreeUtils.elementFromDeclaration(tree);
         // Anonymous classes are validated through their creation expressions.
         if (TreeUtils.isAnonymousClass(tree)) {

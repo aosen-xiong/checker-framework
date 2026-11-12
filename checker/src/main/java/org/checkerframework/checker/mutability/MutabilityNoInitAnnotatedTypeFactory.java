@@ -183,6 +183,22 @@ public class MutabilityNoInitAnnotatedTypeFactory
     }
 
     /**
+     * Makes {@code mode} the current method mode until the matching {@link #popMethodMode}. The
+     * visitor calls this around a method body, so that the subtyping checks it performs itself,
+     * outside {@link #getAnnotatedType(Tree)}, adapt in the mode of that body.
+     *
+     * @param mode the mode to make current
+     */
+    void pushMethodMode(MethodMode mode) {
+        methodModeStack.push(mode);
+    }
+
+    /** Restores the method mode that was current before the matching {@link #pushMethodMode}. */
+    void popMethodMode() {
+        methodModeStack.pop();
+    }
+
+    /**
      * Returns the mutability viewpoint adapter.
      *
      * @return the viewpoint adapter, typed

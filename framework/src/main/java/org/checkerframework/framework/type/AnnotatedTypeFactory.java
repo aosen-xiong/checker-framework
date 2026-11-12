@@ -2944,6 +2944,25 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
     }
 
     /**
+     * Returns true if the members of a type-variable use are reachable through {@link
+     * #getTypeVariableUseView}. This is false only for a use written {@code @q X} whose bound has
+     * type arguments that the viewpoint adapter cannot widen; see {@link
+     * ViewpointAdapter#hasRequalifiedUseView}.
+     *
+     * @param typeVariable a type-variable use
+     * @return true if fields and methods may be reached through {@code typeVariable}
+     */
+    public boolean hasTypeVariableUseView(AnnotatedTypeVariable typeVariable) {
+        if (viewpointAdapter == null
+                || typeVariable.isDeclaration()
+                || typeVariable.getTypeVariableUsageKind()
+                        != AnnotatedTypeVariable.TypeVariableUsageKind.REQUALIFYING) {
+            return true;
+        }
+        return viewpointAdapter.hasRequalifiedUseView(typeVariable.getUpperBound());
+    }
+
+    /**
      * Adapt the upper bounds of the type variables of a class relative to the type instantiation.
      * In some type systems, the upper bounds depend on the instantiation of the class. For example,
      * in the Generic Universe Type system, consider a class declaration

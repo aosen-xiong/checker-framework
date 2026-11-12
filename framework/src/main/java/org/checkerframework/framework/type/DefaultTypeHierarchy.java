@@ -1283,6 +1283,14 @@ public class DefaultTypeHierarchy extends AbstractAtmComboVisitor<Boolean, Void>
      */
     protected boolean visitTypevar_Type(
             AnnotatedTypeVariable subtype, AnnotatedTypeMirror supertype) {
+        if (supertype.getKind() == TypeKind.DECLARED
+                && !((AnnotatedDeclaredType) supertype).getTypeArguments().isEmpty()
+                && !subtype.atypeFactory.hasTypeVariableUseView(subtype)) {
+            // A use "@q X" whose bound has type arguments that cannot be widened has no view as
+            // a generic class type, through which members typed by those arguments would be
+            // reached. A class type without type arguments, such as Object, exposes none of them.
+            return false;
+        }
         AnnotatedTypeMirror subtypeUpperBound =
                 subtype.atypeFactory.getTypeVariableUseView(subtype);
         if (TypesUtils.isBoxedPrimitive(subtypeUpperBound.getUnderlyingType())

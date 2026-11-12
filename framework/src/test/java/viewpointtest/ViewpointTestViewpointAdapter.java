@@ -71,6 +71,11 @@ public class ViewpointTestViewpointAdapter extends AbstractViewpointAdapter {
         return declaredAnnotation;
     }
 
+    @Override
+    protected boolean widensRequalifiedUpperBounds() {
+        return true;
+    }
+
     /**
      * {@inheritDoc}
      *

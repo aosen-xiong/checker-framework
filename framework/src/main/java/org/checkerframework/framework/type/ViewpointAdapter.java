@@ -126,4 +126,24 @@ public interface ViewpointAdapter {
             AnnotatedTypeMirror upperBound) {
         return null;
     }
+
+    /**
+     * Returns true if a type-variable use written with a qualifier of its own, as in {@code @q X},
+     * has a view through its upper bound: a type through which its members are reached and through
+     * which it is a subtype of a generic class type.
+     *
+     * <p>{@code upperBound} is the upper bound of {@code X} with its main qualifier replaced by
+     * {@code q}. When {@link #widenRequalifiedUpperBound} cannot widen its type arguments because
+     * they are not ground, a later substitution can supply a qualifier inside them that depends on
+     * the reference, which {@code q} has just replaced. Such a use then has no view, and no field
+     * or method may be reached through it.
+     *
+     * <p>The default implementation returns true, which keeps the type arguments as declared.
+     *
+     * @param upperBound the upper bound of a type-variable use, with the use's main qualifier
+     * @return true if members are reachable through {@code upperBound}
+     */
+    default boolean hasRequalifiedUseView(AnnotatedTypeMirror upperBound) {
+        return true;
+    }
 }

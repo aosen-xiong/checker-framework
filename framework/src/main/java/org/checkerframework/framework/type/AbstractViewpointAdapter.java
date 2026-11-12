@@ -304,6 +304,48 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
     }
 
     /**
+     * {@inheritDoc}
+     *
+     * <p>This implementation applies only to an adapter that widens type arguments, which {@link
+     * #widensRequalifiedUpperBounds} tells. It returns false when the bound is a class type with a
+     * type argument that is not ground in the sense of {@link #widenRequalifiedUpperBound}: it
+     * contains a type variable, a wildcard, or a qualifier that cannot be widened, such as a
+     * qualifier parameter.
+     */
+    @Override
+    public boolean hasRequalifiedUseView(AnnotatedTypeMirror upperBound) {
+        if (!widensRequalifiedUpperBounds() || upperBound.getKind() != TypeKind.DECLARED) {
+            return true;
+        }
+        AnnotationMirror mainQualifier = extractAnnotationMirror(upperBound);
+        if (mainQualifier == null || atypeFactory.getQualifierHierarchy().isBottom(mainQualifier)) {
+            // As in widenRequalifiedUpperBound: only null has this type.
+            return true;
+        }
+        for (AnnotatedTypeMirror typeArg :
+                ((AnnotatedDeclaredType) upperBound).getTypeArguments()) {
+            if (groundAndWidens(typeArg) == null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Returns true if this adapter widens the type arguments of the upper bound of a type-variable
+     * use written {@code @q X}, that is, if it implements {@link #widenTypeArgumentQualifier}. Only
+     * such an adapter restricts the uses whose type arguments it cannot widen; see {@link
+     * #hasRequalifiedUseView}.
+     *
+     * <p>The default implementation returns false.
+     *
+     * @return true if this adapter widens type arguments
+     */
+    protected boolean widensRequalifiedUpperBounds() {
+        return false;
+    }
+
+    /**
      * Returns the qualifier that {@code qualifier} is widened to in a type argument of the upper
      * bound of a type-variable use written {@code @q X}; see {@link #widenRequalifiedUpperBound}. A
      * qualifier that a receiver-dependent qualifier can become through some reference is widened to

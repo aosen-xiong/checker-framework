@@ -95,6 +95,11 @@ public class MutabilityViewpointAdapter extends AbstractViewpointAdapter {
         throw new BugInCF("Unknown declared qualifier: " + declaredAnnotation);
     }
 
+    @Override
+    protected boolean widensRequalifiedUpperBounds() {
+        return true;
+    }
+
     /**
      * {@inheritDoc}
      *

@@ -1,8 +1,3 @@
-// @skip-test : superclass type arguments are not viewpoint-adapted through the receiver. The
-// Mutability factory overrides postDirectSuperTypes without the framework's adaptation, so a
-// @ReceiverDependentMutable argument does not follow the receiver in any mode, and readonly-state
-// and transitive-state do not hide a written @Mutable argument. Remove this line once fixed.
-
 import org.checkerframework.checker.mutability.qual.AbstractState;
 import org.checkerframework.checker.mutability.qual.ConcreteState;
 import org.checkerframework.checker.mutability.qual.Immutable;
