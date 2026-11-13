@@ -99,10 +99,10 @@ import org.checkerframework.checker.mutability.qual.ReceiverDependentMutable;
     // @Readonly P<@MutabilityLost Cell> is accepted, and the item read through it is a
     // @MutabilityLost Cell, which is not a @Mutable Cell. By ST_Local and ST_VarAss (which ask
     // only well-formedness and subtyping) the calculus accepts the local p. No lemma states this.
-    // REJECTED BY CHECKER, ACCEPTED BY THE RULES: the checker rejects the local p.
+    // ACCEPTED BY THE RULES AND BY THE CHECKER: a written @MutabilityLost type argument is allowed
+    // in a local variable's type.
     @ReadonlyState
     @Readonly Object lostView(@Readonly SarTool this, @Readonly SarC c, @Readonly Object y) {
-        // :: error: (mutability.lost.type.argument) :: error: (mutability.lost.lhs)
         @Readonly SarP<@MutabilityLost SarCell> p = c;
         // :: error: (assignment.type.incompatible)
         @Mutable SarCell k = p.item;

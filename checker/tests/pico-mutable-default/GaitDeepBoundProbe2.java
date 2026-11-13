@@ -73,10 +73,10 @@ import org.checkerframework.checker.mutability.qual.TransitiveState;
     // wf_attack, step_a_typed (well typed in the calculus): rb = this.bx in readonly-state code.
     // The field type read through the @ReceiverDependentMutable receiver is
     // @MutabilityLost Box2<@Readonly K, @MutabilityLost Cell>, a subtype of the type of rb.
-    // WELL TYPED IN ROCQ BUT REJECTED BY CHECKER: the checker rejects the local rb.
+    // WELL TYPED IN ROCQ, and accepted by the checker since a written @MutabilityLost type
+    // argument is allowed in a local variable's type.
     @ReadonlyState
     @Readonly Object attack(@ReceiverDependentMutable Dbp2Owner this, @Readonly Object y) {
-        // :: error: (mutability.lost.type.argument) :: error: (mutability.lost.lhs)
         @Readonly Dbp2Box2<@Readonly Dbp2K, @MutabilityLost Dbp2Cell> rb = this.bx;
         return y;
     }
@@ -89,7 +89,6 @@ import org.checkerframework.checker.mutability.qual.TransitiveState;
     @ReadonlyState
     @Readonly Object writeItem(
             @ReceiverDependentMutable Dbp2Owner this,
-            // :: error: (mutability.lost.type.argument)
             @Readonly Dbp2Box2<@Readonly Dbp2K, @MutabilityLost Dbp2Cell> rb,
             @Readonly Object y) {
         @Mutable Dbp2Cell c0 = new @Mutable Dbp2Cell(null, y);

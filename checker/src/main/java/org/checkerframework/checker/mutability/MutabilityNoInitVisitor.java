@@ -16,6 +16,7 @@ import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.UnaryTree;
 import com.sun.source.tree.VariableTree;
+import com.sun.source.util.TreePath;
 
 import org.checkerframework.checker.compilermsgs.qual.CompilerMessageKey;
 import org.checkerframework.checker.initialization.qual.UnderInitialization;
@@ -147,9 +148,17 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
     }
 
     /**
-     * Rejects {@code @MutabilityLost} in explicit or inferred type arguments. A lost qualifier
-     * represents imprecision introduced by viewpoint adaptation, not a mutability with which a
-     * generic type may be instantiated.
+     * Rejects {@code @MutabilityLost} in the type arguments that instantiate a generic type or
+     * method: those of a method invocation (ST-Call), of an object creation (ST-New), and of a
+     * superclass or superinterface (WF-Class). A lost qualifier represents imprecision introduced
+     * by viewpoint adaptation, not a mutability with which a generic type may be instantiated.
+     *
+     * <p>Elsewhere, for example in the declared type of a local variable, a field, a parameter or a
+     * return type, a type argument may be {@code @MutabilityLost}: type-argument subtyping lets a
+     * qualifier be replaced by {@code @MutabilityLost} (STA-Var, STA-Class), so {@code @Readonly
+     * List<@MutabilityLost Data>} is a supertype of every {@code List<q Data>}. Writes at such a
+     * type are still rejected: to a field ({@code mutability.lost.lhs}), to a parameter ({@code
+     * mutability.lost.parameter}), and through adapted bounds ({@code mutability.lost.in.bounds}).
      */
     @Override
     protected boolean shouldCheckTypeArgument(
@@ -159,11 +168,70 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
             @Nullable Tree typeArgTree,
             CharSequence typeOrMethodName,
             Object paramName) {
-        if (AnnotatedTypes.containsModifier(typeArg, atypeFactory.LOST)) {
+        if (AnnotatedTypes.containsModifier(typeArg, atypeFactory.LOST)
+                && instantiatesGenericType(toptree)) {
             checker.reportError(typeArgTree == null ? toptree : typeArgTree, LOST_TYPE_ARGUMENT);
         }
         return super.shouldCheckTypeArgument(
                 toptree, bounds, typeArg, typeArgTree, typeOrMethodName, paramName);
+    }
+
+    /**
+     * Returns true if the type arguments checked at {@code toptree} instantiate a generic type or
+     * method: {@code toptree} is a method invocation or an object creation, or a type tree that is
+     * (part of) the class of an object creation or a superclass or superinterface of a class.
+     *
+     * @param toptree the tree whose type arguments are checked
+     * @return true if {@code @MutabilityLost} is forbidden in those type arguments
+     */
+    private boolean instantiatesGenericType(Tree toptree) {
+        if (toptree instanceof MethodInvocationTree || toptree instanceof NewClassTree) {
+            return true;
+        }
+        TreePath path = atypeFactory.getPath(toptree);
+        if (path == null) {
+            return true;
+        }
+        Tree child = toptree;
+        TreePath parentPath = path.getParentPath();
+        while (parentPath != null && isTypeTreeContainer(parentPath.getLeaf())) {
+            child = parentPath.getLeaf();
+            parentPath = parentPath.getParentPath();
+        }
+        if (parentPath == null) {
+            return false;
+        }
+        Tree parent = parentPath.getLeaf();
+        if (parent instanceof NewClassTree) {
+            return ((NewClassTree) parent).getIdentifier() == child;
+        }
+        if (parent instanceof ClassTree) {
+            ClassTree classTree = (ClassTree) parent;
+            return classTree.getExtendsClause() == child
+                    || classTree.getImplementsClause().contains(child);
+        }
+        return false;
+    }
+
+    /**
+     * Returns true if {@code tree} is a type tree that can contain another type tree.
+     *
+     * @param tree a tree
+     * @return true if {@code tree} is a parameterized, annotated, array, wildcard or qualified type
+     */
+    private static boolean isTypeTreeContainer(Tree tree) {
+        switch (tree.getKind()) {
+            case PARAMETERIZED_TYPE:
+            case ANNOTATED_TYPE:
+            case ARRAY_TYPE:
+            case EXTENDS_WILDCARD:
+            case SUPER_WILDCARD:
+            case UNBOUNDED_WILDCARD:
+            case MEMBER_SELECT:
+                return true;
+            default:
+                return false;
+        }
     }
 
     @Override
@@ -180,24 +248,54 @@ public class MutabilityNoInitVisitor extends BaseTypeVisitor<MutabilityNoInitAnn
         }
 
         boolean result = commonAssignmentCheck(var, valueExp, errorKey, extraArgs);
-        return checkLostLhs(var, valueExp, result);
+        return checkLostLhs(varTree, var, valueExp, result);
     }
 
     /**
-     * Reports an error if {@code varType} contains {@code @MutabilityLost}.
+     * Reports an error if {@code varType} contains {@code @MutabilityLost} and the target is not a
+     * local variable. A field write (ST-FldWrite) and an array element write may not store a value
+     * at a type that contains {@code @MutabilityLost}. A local variable may have such a type, as in
+     * the paper, where a local's type is any well-formed type.
      *
+     * @param varTree the assignment target tree
      * @param varType the assignment target type
      * @param valueExpTree the assignment value tree
      * @param result the result computed by the regular assignment check
      * @return false if {@code varType} contains {@code @MutabilityLost}; otherwise {@code result}
      */
     private boolean checkLostLhs(
-            AnnotatedTypeMirror varType, ExpressionTree valueExpTree, boolean result) {
-        if (AnnotatedTypes.containsModifier(varType, atypeFactory.LOST)) {
+            Tree varTree,
+            AnnotatedTypeMirror varType,
+            ExpressionTree valueExpTree,
+            boolean result) {
+        if (AnnotatedTypes.containsModifier(varType, atypeFactory.LOST)
+                && !isLocalVariableTarget(varTree)) {
             checker.reportError(valueExpTree, LOST_LHS);
             return false;
         }
         return result;
+    }
+
+    /**
+     * Returns true if {@code varTree} declares or names a local variable, a method or lambda
+     * parameter, a resource variable, an exception parameter or a binding variable.
+     *
+     * @param varTree an assignment target tree
+     * @return true if the target is a local variable or a parameter
+     */
+    private static boolean isLocalVariableTarget(Tree varTree) {
+        Element element;
+        if (varTree instanceof VariableTree) {
+            element = TreeUtils.elementFromDeclaration((VariableTree) varTree);
+        } else if (varTree instanceof IdentifierTree) {
+            element = TreeUtils.elementFromUse((IdentifierTree) varTree);
+        } else {
+            return false;
+        }
+        return element != null
+                && (ElementUtils.isLocalVariable(element)
+                        || ElementUtils.isBindingVariable(element)
+                        || element.getKind() == ElementKind.PARAMETER);
     }
 
     @Override

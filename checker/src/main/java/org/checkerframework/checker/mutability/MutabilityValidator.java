@@ -208,7 +208,9 @@ public class MutabilityValidator extends BaseTypeValidator {
      * Reports an error if an implicitly immutable type is used with a non-immutable qualifier.
      *
      * <p>Dataflow may refine an immutable type to {@code @Bottom}, as in {@code RefineFromNull};
-     * therefore, {@code @Bottom} is also accepted.
+     * therefore, {@code @Bottom} is also accepted. {@code @MutabilityLost} is accepted too, because
+     * a lost qualifier is always well formed (WF-ClassType), so that, for example, {@code @Readonly
+     * Pair<@MutabilityLost String, ...>} is a supertype of {@code Pair<@Immutable String, ...>}.
      *
      * @param type the type to check
      * @param tree the tree to check
@@ -216,7 +218,8 @@ public class MutabilityValidator extends BaseTypeValidator {
     private void checkImplicitlyImmutableTypeError(AnnotatedTypeMirror type, Tree tree) {
         if (mutabilityTypeFactory.isImplicitlyImmutableType(type)
                 && !type.hasAnnotation(mutabilityTypeFactory.IMMUTABLE)
-                && !type.hasAnnotation(mutabilityTypeFactory.BOTTOM)) {
+                && !type.hasAnnotation(mutabilityTypeFactory.BOTTOM)
+                && !type.hasAnnotation(mutabilityTypeFactory.LOST)) {
             reportInvalidAnnotationsOnUse(type, tree);
         }
     }

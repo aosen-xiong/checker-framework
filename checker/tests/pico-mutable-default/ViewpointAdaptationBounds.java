@@ -30,10 +30,9 @@ public class ViewpointAdaptationBounds {
     // :: error: (type.argument.type.incompatible)
     void incompatibleImmutableBound(@Immutable Generic<@Mutable Object> mutable) {}
 
-    // Use @MutabilityLost so the type argument is within the adapted @MutabilityLost bound. This
-    // isolates the diagnostic for @MutabilityLost in the adapted bound.
+    // Use @MutabilityLost so the type argument is within the adapted @MutabilityLost bound. The
+    // type is well formed, and a local variable may have it.
     void readonlyMainLostOnlyArgument(@Readonly Generic<@MutabilityLost Object> generic) {
-        // :: error: (mutability.lost.lhs)
         @Readonly Generic<@MutabilityLost Object> local = generic;
     }
 

@@ -74,7 +74,7 @@ import org.checkerframework.checker.mutability.qual.TransitiveState;
     // The file header still calls this type well formed, but the lemma proves otherwise, and no
     // wf_class lemma exists for Factory.
     @ReadonlyState
-    // :: error: (type.argument.type.incompatible) :: error: (mutability.lost.type.argument)
+    // :: error: (type.argument.type.incompatible)
     @Readonly DbpBox3<@ReceiverDependentMutable DbpK, @MutabilityLost DbpCell> make(
             @ReceiverDependentMutable DbpFactory this) {
         return null;
@@ -176,7 +176,7 @@ class DbpWrites {
     // checker reads e1 as @MutabilityLost K (not @ReceiverDependentMutable K) and rejects the
     // write.
     void writeE1(
-            // :: error: (type.argument.type.incompatible) :: error: (mutability.lost.type.argument)
+            // :: error: (type.argument.type.incompatible)
             @Readonly DbpBox3<@ReceiverDependentMutable DbpK, @MutabilityLost DbpCell> rb,
             @Mutable DbpK w) {
         // :: error: (assignment.type.incompatible) :: error: (mutability.lost.lhs)
