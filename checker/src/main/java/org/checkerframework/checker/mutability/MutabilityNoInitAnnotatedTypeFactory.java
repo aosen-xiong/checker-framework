@@ -487,8 +487,8 @@ public class MutabilityNoInitAnnotatedTypeFactory
      * executable type returned by {@link #methodFromUseWithoutTypeArgInference} does not expose the
      * adapted bounds needed to detect lost mutability, so adapt those bounds explicitly.
      *
-     * <p>After <a href="https://github.com/eisop/checker-framework/pull/1850">pull request
-     * #1850</a>, remove this specialized adaptation and use the bounds from the executable type.
+     * <p>Once the framework exposes these adapted bounds, remove this specialized adaptation and
+     * use the bounds from the executable type.
      *
      * @param tree a method invocation
      * @return the adapted method type parameter bounds

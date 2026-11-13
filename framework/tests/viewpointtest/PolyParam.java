@@ -1,9 +1,9 @@
-// Test case for EISOP issue #2233:
-// https://github.com/eisop/checker-framework/issues/2233
+// Regression test for a viewpoint-adaptation defect with polymorphic
+// parameters.
 
 import viewpointtest.quals.*;
 
-public class Issue2233 {
+public class PolyParam {
     static class Tool {
         void take(@A Tool this, @PolyVP Object o) {}
 

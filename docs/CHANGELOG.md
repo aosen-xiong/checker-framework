@@ -118,7 +118,7 @@ JSpecify support in the Nullness Checker:
   specifies: checks only `@AnnotatedFor` scope, treats `@NullMarked` as a
   defaulting annotation, skips initialization/map-key checking, assumes purity
   and enabled assertions, and applies permissive defaults to unscoped code.
-  Field reads through another object no longer crash (eisop#2259).
+  Field reads through another object no longer crash.
 - `@NullMarked` aliases `@AnnotatedFor` scoped to nullness (plus
   `@DefaultQualifier`), and `@NullUnmarked` aliases `@UnannotatedFor`. Both
   apply under `-AuseConservativeDefaultsForUncheckedCode` and compose with
@@ -362,7 +362,7 @@ Other improvements and bug fixes:
 - `OverrideChecker` delegates comparisons to overridable hooks
   (`isParameterOverrideValid`, `isReturnOverrideValid`,
   `isTypeParameterBoundOverrideValid`); the latter reports
-  `override.typaram.invalid`, closing a soundness hole (eisop#1965).
+  `override.typaram.invalid`, closing a soundness hole.
 - Enclosing type argument fixes (eisop#737): `TypeFromTypeTreeVisitor` restores
   declared bounds; `BaseTypeValidator` checks enclosing type arguments against
   declared bounds, and reports an out-of-bound enclosing type argument once in
@@ -649,7 +649,6 @@ eisop#2164,
 eisop#2179,
 eisop#2187,
 eisop#2224,
-eisop#2233,
 eisop#2258,
 eisop#2259,
 eisop#2260,

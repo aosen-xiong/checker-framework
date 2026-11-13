@@ -1,9 +1,9 @@
 import viewpointtest.quals.*;
 
-// https://github.com/eisop/checker-framework/issues/2296
+// Regression test for a viewpoint-adaptation defect.
 // A use @q X views the bound of X with main qualifier q and type arguments widened, because a
 // receiver-dependent superclass argument of the type that X stands for follows q.
-public class Issue2296 {
+public class WidenView {
     static class Data {}
 
     static class Box<E extends @Top Object> {
@@ -19,7 +19,7 @@ public class Issue2296 {
     }
 
     void client(@A Own a) {
-        @B Data wrong = Issue2296.<@B Own>get(a);
+        @B Data wrong = WidenView.<@B Own>get(a);
         @A Data right = a.elem;
     }
 

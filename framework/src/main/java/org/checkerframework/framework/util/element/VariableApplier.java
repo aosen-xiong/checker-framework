@@ -104,7 +104,7 @@ public class VariableApplier extends TargetedElementAnnotationApplier {
                 TargetType.CONSTRUCTOR_REFERENCE_TYPE_ARGUMENT,
                 TargetType.METHOD_FORMAL_PARAMETER,
                 TargetType.CLASS_EXTENDS,
-                // TODO: Test cases from Issue 3277 and EISOP Issue 2290 produce invalid
+                // TODO: Test cases from Issue 3277 and a related EISOP issue produce invalid
                 // positions. Ignore until this javac bug is fixed:
                 // https://bugs.openjdk.org/browse/JDK-8233945
                 TargetType.UNKNOWN

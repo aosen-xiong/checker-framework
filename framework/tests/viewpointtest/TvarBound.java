@@ -1,9 +1,9 @@
 import viewpointtest.quals.*;
 
-// https://github.com/eisop/checker-framework/issues/2516
+// Regression test for a viewpoint-adaptation defect.
 // A class type parameter's receiver-dependent bound is viewpoint-adapted through the receiver of a
 // member access, like a field declared with the same qualifier.
-public class Issue2516 {
+public class TvarBound {
     static class Box<X extends @ReceiverDependentQual Object> {
         @ReceiverDependentQual Object f;
         X item;

@@ -273,7 +273,7 @@ Two traps remain:
 - An unannotated anonymous class fails the override check against a `@Readonly` receiver,
   while `new @Mutable AbstractIterator<T>() {...}` passes.
 - `@PolyMutable` varargs always fail (the array must be `@MutabilityBottom`). The same
-  defect hits `Arrays.asList` (eisop issue 2293).
+  defect hits `Arrays.asList`.
 - A `@PolyMutable` receiver adapts a receiver-dependent result to `@MutabilityLost`, and
   `new @PolyMutable X(rdmArg)` adapts an RDM constructor parameter to `@MutabilityLost`.
   Prefer a `@Readonly` parameter with a return-only poly.

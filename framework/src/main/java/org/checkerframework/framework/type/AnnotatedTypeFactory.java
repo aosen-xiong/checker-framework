@@ -2925,7 +2925,7 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
      * <p>For a use written bare, as {@code X}, this is the upper bound of {@code X}. For a use
      * written {@code @q X}, the viewpoint adapter may widen the type arguments of the bound,
      * because {@code @q} replaces the main qualifier of the type argument that {@code X} stands for
-     * and a receiver-dependent superclass argument of that type follows it (eisop#2296). See {@link
+     * and a receiver-dependent superclass argument of that type follows it. See {@link
      * ViewpointAdapter#widenRequalifiedUpperBound}.
      *
      * @param typeVariable a type-variable use

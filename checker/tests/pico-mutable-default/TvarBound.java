@@ -3,21 +3,21 @@ import org.checkerframework.checker.mutability.qual.Readonly;
 import org.checkerframework.checker.mutability.qual.ReadonlyState;
 import org.checkerframework.checker.mutability.qual.ReceiverDependentMutable;
 
-// https://github.com/eisop/checker-framework/issues/2516
+// Regression test for a viewpoint-adaptation defect.
 // A class type parameter's bound is viewpoint-adapted through the receiver of a member access,
 // like a field declared with the same qualifier, and a method type parameter bound that names the
 // class type parameter is adapted with it.
-@ReceiverDependentMutable class Issue2516Box<X extends @ReceiverDependentMutable Object> {
+@ReceiverDependentMutable class TvarBoundBox<X extends @ReceiverDependentMutable Object> {
     @ReceiverDependentMutable Object f;
     X item;
 
-    Issue2516Box(@ReceiverDependentMutable Object f, X item) {
+    TvarBoundBox(@ReceiverDependentMutable Object f, X item) {
         this.f = f;
         this.item = item;
     }
 
     // The receiver is the class's own type, so its type argument X is within X's bound.
-    void readonlyReceiver(@Readonly Issue2516Box<X> this) {
+    void readonlyReceiver(@Readonly TvarBoundBox<X> this) {
         // :: error: (assignment.type.incompatible)
         @ReceiverDependentMutable Object fromField = this.f;
         // Through a @Readonly receiver, the bound of X is @MutabilityLost Object.
@@ -33,23 +33,23 @@ import org.checkerframework.checker.mutability.qual.ReceiverDependentMutable;
         @ReceiverDependentMutable Object fromItem = this.item;
     }
 
-    void mutableReceiver(@Mutable Issue2516Box<X> this) {
+    void mutableReceiver(@Mutable TvarBoundBox<X> this) {
         @Mutable Object fromItem = this.item;
     }
 
-    <M extends X> void takeX(@Readonly Issue2516Box<X> this, M m) {}
+    <M extends X> void takeX(@Readonly TvarBoundBox<X> this, M m) {}
 
-    void callTakeX(@Readonly Issue2516Box<X> this, X x) {
+    void callTakeX(@Readonly TvarBoundBox<X> this, X x) {
         // M's bound X, adapted through the @Readonly receiver, has bound @MutabilityLost Object.
         // :: error: (mutability.lost.in.bounds)
         this.takeX(x);
     }
 }
 
-@ReceiverDependentMutable class Issue2516MutableBound<X extends @Mutable Object> {
+@ReceiverDependentMutable class TvarBoundMutableBound<X extends @Mutable Object> {
     X item;
 
-    Issue2516MutableBound(X item) {
+    TvarBoundMutableBound(X item) {
         this.item = item;
     }
 
@@ -57,7 +57,7 @@ import org.checkerframework.checker.mutability.qual.ReceiverDependentMutable;
     // and so is a type variable's @Mutable bound.
     @ReadonlyState
     // :: error: (method.mode.signature.mutable)
-    void readonlyState(@Readonly Issue2516MutableBound<X> this) {
+    void readonlyState(@Readonly TvarBoundMutableBound<X> this) {
         // :: error: (assignment.type.incompatible)
         @Mutable Object fromItem = this.item;
         @Readonly Object readonly = this.item;

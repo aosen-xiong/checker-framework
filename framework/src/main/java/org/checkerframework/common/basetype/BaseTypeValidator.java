@@ -794,7 +794,7 @@ public class BaseTypeValidator extends AnnotatedTypeScanner<Void, Tree> implemen
      * which is every instance of {@code Box}. Its type argument {@code X} is not a choice the
      * receiver makes, so checking it against {@code X}'s bound adapted through {@code @Q} compares
      * two views of the same type parameter. A member read through the receiver adapts {@code X}'s
-     * bound instead (eisop#2516).
+     * bound instead.
      *
      * @param bounds the bounds of {@code element}'s type parameters, adapted through {@code type}
      * @param type a use of {@code element} that is a method receiver type

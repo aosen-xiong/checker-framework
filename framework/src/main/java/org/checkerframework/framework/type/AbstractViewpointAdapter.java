@@ -76,7 +76,7 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
         } else if (memberType.getKind() == TypeKind.TYPEVAR
                 && combinedType.getKind() == TypeKind.TYPEVAR) {
             // A type variable's bounds are adapted like any other part of the member's type, as
-            // in "X item" read through a "@Q Box<X>" receiver inside Box (eisop#2516).
+            // in "X item" read through a "@Q Box<X>" receiver inside Box.
             AnnotatedTypeVariable atvType = (AnnotatedTypeVariable) memberType;
             AnnotatedTypeVariable atvCombinedType = (AnnotatedTypeVariable) combinedType;
             if (atvType.getUnderlyingType()
@@ -432,7 +432,7 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
         // an actual type argument, not a formal type parameter of one of the receiver's
         // supertypes, so it must not be looked up in the receiver's supertypes.  That lookup
         // would also compute the receiver's direct supertypes, whose post-processing calls this
-        // method again with the same receiver, recursing until the stack overflows (eisop#2036).
+        // method again with the same receiver, recursing until the stack overflows.
         return combineTypeWithType(receiverType, declaredType, false);
     }
 
@@ -558,7 +558,7 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
      *
      * <p>Using a copier is what makes a self-referential type terminate: the original-to-copy map
      * adapts each type once and points every later reference at that copy. The hand-rolled
-     * traversal this replaced recursed until it overflowed the stack (eisop#778).
+     * traversal this replaced recursed until it overflowed the stack.
      */
     private final class ViewpointAdaptationCopier extends SummarizeIntersectionCopier {
 
@@ -724,8 +724,8 @@ public abstract class AbstractViewpointAdapter implements ViewpointAdapter {
             // The receiver passes the type parameter through unchanged, as the receiver of a
             // method does inside the parameter's own class.  The type argument is then var's own
             // type parameter, so substituting it would only undo the adaptation of var through
-            // the receiver: of its bounds, and of its qualifier if the usage is written "@q E"
-            // (eisop#2516).  This is not a capture, so the caveat below does not apply.
+            // the receiver: of its bounds, and of its qualifier if the usage is written "@q E".
+            // This is not a capture, so the caveat below does not apply.
             return var;
         }
         // return a copy, as we want to modify the type later.

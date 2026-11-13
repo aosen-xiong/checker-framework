@@ -6,7 +6,7 @@ import org.checkerframework.checker.mutability.qual.ReceiverDependentMutable;
 // Accessors of a class whose type parameter has a @ReceiverDependentMutable bound.
 //
 // Two bare uses of the same type parameter are the same type, whatever receiver each was viewed
-// through: through a @Readonly receiver the bound of E is lost (eisop#2516), but the value is
+// through: through a @Readonly receiver the bound of E is lost, but the value is
 // still an E.
 //
 // The GAIT paper also accepts the getter and the setter below. The checker rejects them because

@@ -115,7 +115,7 @@ public interface ViewpointAdapter {
      * for: a class that extends {@code C<@ReceiverDependent T>} passes a type argument whose
      * qualifier depends on the qualifier of the reference, which {@code q} has just replaced. An
      * implementation returns a copy of {@code upperBound} in which every qualifier of its type
-     * arguments that such a dependency can produce is widened to one that forgets it (eisop#2296).
+     * arguments that such a dependency can produce is widened to one that forgets it.
      *
      * <p>The default implementation returns null, which keeps the type arguments as declared.
      *

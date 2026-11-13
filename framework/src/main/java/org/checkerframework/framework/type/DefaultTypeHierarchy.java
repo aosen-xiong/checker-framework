@@ -1062,7 +1062,7 @@ public class DefaultTypeHierarchy extends AbstractAtmComboVisitor<Boolean, Void>
                         && supertype.getTypeVariableUsageKind() == TypeVariableUsageKind.PLAIN) {
                     // Two bare uses of the same type parameter stand for the same type. Their
                     // bounds differ only if viewpoint adaptation has viewed one of them through a
-                    // receiver, as a member read through a @Readonly "this" is (eisop#2516), and
+                    // receiver, as a member read through a @Readonly "this" is, and
                     // the bound of a view says nothing about which type it is.
                     return true;
                 }
