@@ -5,9 +5,9 @@ description: Rules for adding Mutability Checker (GAIT) qualifiers to Java code 
 
 # Adding Mutability Checker annotations
 
-Hard-won rules from annotating the JDK (52 `java.util` files), Guava (411 files), and the
-client libraries Jimfs, gson, commons-io, Truth and Commons Lang. Each rule cost a wrong
-conclusion or a reverted pass.
+Hard-won rules from annotating the JDK (52 `java.util` files), Guava (411 files), the
+client libraries Jimfs, gson and commons-io, and the Commons Lang tuples. Each rule cost a
+wrong conclusion or a reverted pass.
 
 ## 1. Every number needs its toolchain stated
 
@@ -214,9 +214,11 @@ rejected. The `@Readonly` version needed 40 qualifiers and accepts every value.
   `@Readonly` view of such a class is ill-formed, and a written `@MutabilityLost` type
   argument is forbidden. The cost: code that stores values in such a container cannot
   store a mutable value. A `@Readonly` bound accepts everything and guarantees nothing.
-- Method modes (`@AbstractState`, `@ConcreteState`, `@ReceiverState`, `@TransitiveState`)
-  are invariant under overriding (`method.mode.override.invalid`). A method may call only
-  methods of at least its own strength. `-AsideEffectFreeAsTransitiveState` treats
+- Method modes (`@AbstractState`, the default, `@ConcreteState`, `@ReadonlyState`,
+  `@TransitiveState`) are invariant under overriding (`method.mode.override.invalid`). A
+  method may call methods of its own mode or a stronger one. `@TransitiveState` is the
+  strongest, `@ConcreteState` and `@ReadonlyState` both refine `@AbstractState`, and those
+  two are incomparable. `-AsideEffectFreeAsTransitiveState` treats
   `@SideEffectFree` and `@Pure` as transitive state, and overrides inherit them.
 
 ## 11. Library-specific rules
