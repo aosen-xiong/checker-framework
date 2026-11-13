@@ -5,7 +5,7 @@ description: Rules for adding Mutability Checker (GAIT) qualifiers to Java code 
 
 # Adding Mutability Checker annotations
 
-Hard-won rules from annotating the JDK (52 `java.util` files), Guava (411 files), the
+Hard-won rules from annotating the JDK (52 `java.util` files and `String`), Guava (411 files), the
 client libraries Jimfs, gson and commons-io, and the Commons Lang tuples. Each rule cost a
 wrong conclusion or a reverted pass.
 
@@ -17,12 +17,11 @@ reporting. Never compare a number across checkers or JDK configurations. Doing s
 produced four wrong conclusions in one session, two of them false claims that a build was
 broken.
 
-Reference results on branch `gait` at f4062696e, built against the annotated JDK at
-96fbe6402d4:
+Reference results of this checker, built against the annotated JDK of the GAIT artifact:
 
 | Target | Errors |
 |---|---|
-| the 52 JDK files in `java/util/TypecheckedList.txt` | 0 |
+| the 53 JDK files in `java/util/TypecheckedList.txt` | 0 |
 | the 411 claimed Guava files (tiers T1 to T3) | 0 |
 | the whole Guava module | 64 |
 
@@ -255,8 +254,8 @@ a probe line depends on an earlier rejected line, say that its verdict is moot.
 
 ## 14. Unneeded suppressions
 
-`-AwarnUnneededSuppressions` works with `-AassumeInitialized` on any branch that contains
-eisop commit d808a912c. Do **not** remove `-AassumeInitialized` to get the report: on
+`-AwarnUnneededSuppressions` works with `-AassumeInitialized` in this checker
+(earlier framework versions ignored it there). Do **not** remove `-AassumeInitialized` to get the report: on
 Guava that causes 149 `@Covariant` crashes, and a crashed file's suppressions all look
 unneeded.
 
