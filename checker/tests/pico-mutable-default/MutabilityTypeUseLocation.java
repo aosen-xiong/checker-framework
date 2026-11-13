@@ -27,7 +27,9 @@ import org.checkerframework.checker.mutability.qual.ReceiverDependentMutable;
 
     // :: error: (type.invalid.annotations.on.location) :: error: (invalid.polymorphic.qualifier)
     class MutabilityTypeUseLocationFail<@PolyMutable T, S extends @PolyMutable Object> {
+        // The implicit super() call adapts Object's @RDM constructor result through @PolyMutable.
         // :: error: (type.invalid.annotations.on.location) :: error: (constructor.return.invalid)
+        // :: error: (super.invocation.invalid)
         @PolyMutable MutabilityTypeUseLocationFail() {}
 
         // :: error: (constructor.return.invalid)

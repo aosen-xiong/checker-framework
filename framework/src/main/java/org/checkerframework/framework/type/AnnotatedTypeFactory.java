@@ -699,8 +699,8 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
 
     /**
      * Caches, per method element, whether its declared type contains a polymorphic qualifier. Such
-     * methods are not cached in {@link #methodAsMemberOfCache} because {@code
-     * methodFromUsePreSubstitution} resolves their qualifiers per call from the arguments.
+     * methods are not cached in {@link #methodAsMemberOfCache} because their qualifiers are
+     * resolved per call from the arguments.
      */
     private final IdentityHashMap<ExecutableElement, Boolean> methodDeclaresPolyCache;
 
@@ -2919,6 +2919,60 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
     }
 
     /**
+     * Returns the upper bound through which members of a type-variable use are looked up and
+     * through which the use is a subtype of a class type.
+     *
+     * <p>For a use written bare, as {@code X}, this is the upper bound of {@code X}. For a use
+     * written {@code @q X}, the viewpoint adapter may widen the type arguments of the bound,
+     * because {@code @q} replaces the main qualifier of the type argument that {@code X} stands for
+     * and a receiver-dependent superclass argument of that type follows it. See {@link
+     * ViewpointAdapter#widenRequalifiedUpperBound}.
+     *
+     * @param typeVariable a type-variable use
+     * @return the upper bound through which {@code typeVariable} is viewed
+     */
+    public AnnotatedTypeMirror getTypeVariableUseView(AnnotatedTypeVariable typeVariable) {
+        AnnotatedTypeMirror upperBound = typeVariable.getUpperBound();
+        if (viewpointAdapter == null
+                || typeVariable.isDeclaration()
+                || typeVariable.getTypeVariableUsageKind()
+                        != AnnotatedTypeVariable.TypeVariableUsageKind.REQUALIFYING) {
+            return upperBound;
+        }
+        AnnotatedTypeMirror widened = viewpointAdapter.widenRequalifiedUpperBound(upperBound);
+        return widened == null ? upperBound : widened;
+    }
+
+    /**
+     * Returns true if this factory viewpoint-adapts types, so that the bounds of a type-variable
+     * use can depend on the receiver it was viewed through.
+     *
+     * @return true if this factory has a viewpoint adapter
+     */
+    public boolean adaptsTypeVariableBounds() {
+        return viewpointAdapter != null;
+    }
+
+    /**
+     * Returns true if the members of a type-variable use are reachable through {@link
+     * #getTypeVariableUseView}. This is false only for a use written {@code @q X} whose bound has
+     * type arguments that the viewpoint adapter cannot widen; see {@link
+     * ViewpointAdapter#hasRequalifiedUseView}.
+     *
+     * @param typeVariable a type-variable use
+     * @return true if fields and methods may be reached through {@code typeVariable}
+     */
+    public boolean hasTypeVariableUseView(AnnotatedTypeVariable typeVariable) {
+        if (viewpointAdapter == null
+                || typeVariable.isDeclaration()
+                || typeVariable.getTypeVariableUsageKind()
+                        != AnnotatedTypeVariable.TypeVariableUsageKind.REQUALIFYING) {
+            return true;
+        }
+        return viewpointAdapter.hasRequalifiedUseView(typeVariable.getUpperBound());
+    }
+
+    /**
      * Adapt the upper bounds of the type variables of a class relative to the type instantiation.
      * In some type systems, the upper bounds depend on the instantiation of the class. For example,
      * in the Generic Universe Type system, consider a class declaration
@@ -3564,10 +3618,11 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
      * inference. The result depends only on {@code methodElt} and {@code receiverType}; see {@link
      * #methodFromUse(ExpressionTree, ExecutableElement, AnnotatedTypeMirror, boolean)}.
      *
-     * @param tree the invocation/reference tree (used only by {@code methodFromUsePreSubstitution})
+     * @param tree the invocation/reference tree (used only by {@code methodFromUsePreSubstitution}
+     *     and {@code methodFromUsePostViewpointAdaptation})
      * @param methodElt the invoked method
      * @param receiverType the receiver type
-     * @param inferTypeArgs passed through to {@code methodFromUsePreSubstitution}
+     * @param inferTypeArgs if true, resolve polymorphic qualifiers
      * @return the method's type as a member of {@code receiverType}
      */
     private AnnotatedExecutableType computeMethodTypeAsMemberOf(
@@ -3580,11 +3635,25 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
         AnnotatedExecutableType memberTypeWithOverrides =
                 applyFakeOverrides(receiverType, methodElt, memberTypeWithoutOverrides);
         memberTypeWithOverrides = applyRecordTypesToAccessors(methodElt, memberTypeWithOverrides);
-        methodFromUsePreSubstitution(tree, memberTypeWithOverrides, inferTypeArgs);
+        // A call instantiates the type parameters and the polymorphic qualifiers of the method
+        // declaration.  Viewpoint adaptation comes before both, so that the receiver's viewpoint
+        // does not rewrite an instantiation.
+        boolean resolvePolyQualsAfterAdaptation =
+                inferTypeArgs
+                        && viewpointAdapter != null
+                        && tree instanceof MethodInvocationTree
+                        && containsPolymorphicQualifier(memberTypeWithOverrides);
+        methodFromUsePreSubstitution(
+                tree, memberTypeWithOverrides, inferTypeArgs && !resolvePolyQualsAfterAdaptation);
 
-        // Perform viewpoint adaption before type argument substitution.
         if (viewpointAdapter != null) {
+            AnnotatedExecutableType declaredType =
+                    resolvePolyQualsAfterAdaptation ? memberTypeWithOverrides.deepCopy() : null;
             viewpointAdapter.viewpointAdaptMethod(receiverType, methodElt, memberTypeWithOverrides);
+            if (declaredType != null) {
+                methodFromUsePostViewpointAdaptation(
+                        (MethodInvocationTree) tree, declaredType, memberTypeWithOverrides);
+            }
         }
 
         return AnnotatedTypes.asMemberOf(
@@ -3909,12 +3978,29 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
      *
      * @param tree either a method invocation or a member reference tree
      * @param type declared method type before type variable substitution
-     * @param resolvePolyQuals if true, resolve polymorphic qualifiers
+     * @param resolvePolyQuals if true, resolve polymorphic qualifiers. It is false for a method
+     *     invocation whose polymorphic qualifiers are resolved after viewpoint adaptation, by
+     *     {@link #methodFromUsePostViewpointAdaptation}.
      */
     protected void methodFromUsePreSubstitution(
             ExpressionTree tree, AnnotatedExecutableType type, boolean resolvePolyQuals) {
         assert tree instanceof MethodInvocationTree || tree instanceof MemberReferenceTree;
     }
+
+    /**
+     * Resolves the polymorphic qualifiers of an invoked method after its declared type was
+     * viewpoint-adapted. If this method is called for an invocation, then {@link
+     * #methodFromUsePreSubstitution} was called with {@code resolvePolyQuals} set to false.
+     *
+     * @param tree a method invocation
+     * @param declaredType the declared method type before viewpoint adaptation
+     * @param type the viewpoint-adapted {@code declaredType}, before type variable substitution;
+     *     side-effected by this method
+     */
+    protected void methodFromUsePostViewpointAdaptation(
+            MethodInvocationTree tree,
+            AnnotatedExecutableType declaredType,
+            AnnotatedExecutableType type) {}
 
     /**
      * Java special-cases the return type of {@link java.lang.Class#getClass() getClass()}. Though
@@ -4155,12 +4241,21 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
 
         ExecutableElement ctor = TreeUtils.elementFromUse(tree);
         AnnotatedExecutableType con = getAnnotatedType(ctor); // get unsubstituted type
-        constructorFromUsePreSubstitution(tree, con, inferTypeArgs);
+        AnnotatedExecutableType declaredCon =
+                prepareConstructorForViewpointAdaptation(tree, con, inferTypeArgs);
 
         // The type arguments inferred for the superclass of an anonymous class created with a
         // diamond, or null.
         TypeArguments anonymousDiamondTypeArgs = null;
         if (tree.getClassBody() != null) {
+            // Viewpoint adapt the anonymous constructor before it takes its parameter types and
+            // its return type annotations from the super constructor, which is adapted separately
+            // below.  Adapting it afterwards would adapt those a second time.
+            if (viewpointAdapter != null) {
+                // The viewpoint adapter sets the parameter types, so store the vararg type first.
+                con.computeVarargType();
+                viewpointAdaptConstructorFromUse(tree, type, ctor, declaredCon, con);
+            }
             // Because the anonymous constructor can't have explicit annotations on its parameters,
             // they are copied from the super constructor invoked in the anonymous constructor. To
             // do this:
@@ -4171,6 +4266,9 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
             // 5. copy annotations on the return type to `con`.
             ExecutableElement superCtor = TreeUtils.getSuperConstructor(tree);
             AnnotatedExecutableType superCon;
+            // The copy that resolves the polymorphic qualifiers of superCon after viewpoint
+            // adaptation, or null.
+            AnnotatedExecutableType declaredSuperCon = null;
             if (TreeUtils.isDiamondTree(tree)) {
                 // The type arguments of the superclass are inferred as for `new C<>(args)` (JLS
                 // 15.9.3), so adapt the super constructor to the generic superclass and infer them
@@ -4188,16 +4286,15 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
                                         anonymousDiamondTypeArgs.typeArgumentsInferred);
             } else {
                 superCon = getAnnotatedType(superCtor);
-                constructorFromUsePreSubstitution(tree, superCon, inferTypeArgs);
+                declaredSuperCon =
+                        prepareConstructorForViewpointAdaptation(tree, superCon, inferTypeArgs);
                 superCon =
                         AnnotatedTypes.asMemberOf(
                                 types, this, type, superCon.getElement(), superCon);
             }
-            if (viewpointAdapter != null) {
-                // Viewpoint adapt the super constructor, because the return type could depend on
-                // the viewpoint and there is an LUB computation later.
-                viewpointAdapter.viewpointAdaptConstructor(type, superCtor, superCon);
-            }
+            // Viewpoint adapt the super constructor, because the return type could depend on the
+            // viewpoint and there is an LUB computation later.
+            viewpointAdaptConstructorFromUse(tree, type, superCtor, declaredSuperCon, superCon);
             con.computeVarargType(superCon);
             if (superCon.getParameterTypes().size() == con.getParameterTypes().size()) {
                 con.setParameterTypes(superCon.getParameterTypes());
@@ -4269,10 +4366,7 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
             // vararg type again.
             con.computeVarargType();
             con = AnnotatedTypes.asMemberOf(types, this, type, ctor, con);
-        }
-
-        if (viewpointAdapter != null) {
-            viewpointAdapter.viewpointAdaptConstructor(type, ctor, con);
+            viewpointAdaptConstructorFromUse(tree, type, ctor, declaredCon, con);
         }
 
         // The anonymous constructor has no type parameters, and for a diamond its parameters were
@@ -4395,6 +4489,54 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
                     .getTypeArguments();
         }
         return Collections.emptyList();
+    }
+
+    /**
+     * Calls {@link #constructorFromUsePreSubstitution} on {@code con}. As for a method invocation
+     * (see {@link #computeMethodTypeAsMemberOf}), the polymorphic qualifiers of a constructor are
+     * resolved after viewpoint adaptation, by {@link #viewpointAdaptConstructorFromUse}.
+     *
+     * @param tree a constructor invocation
+     * @param con the declared type of a constructor that {@code tree} invokes; side-effected by
+     *     this method
+     * @param inferTypeArgs if true, resolve polymorphic qualifiers
+     * @return a copy of {@code con} to pass to {@link #viewpointAdaptConstructorFromUse}, or null
+     *     if the polymorphic qualifiers of {@code con} need no resolution after viewpoint
+     *     adaptation
+     */
+    private @Nullable AnnotatedExecutableType prepareConstructorForViewpointAdaptation(
+            NewClassTree tree, AnnotatedExecutableType con, boolean inferTypeArgs) {
+        boolean resolvePolyQualsAfterAdaptation =
+                inferTypeArgs && viewpointAdapter != null && containsPolymorphicQualifier(con);
+        constructorFromUsePreSubstitution(
+                tree, con, inferTypeArgs && !resolvePolyQualsAfterAdaptation);
+        return resolvePolyQualsAfterAdaptation ? con.deepCopy() : null;
+    }
+
+    /**
+     * Viewpoint-adapts {@code con} and then resolves its polymorphic qualifiers. Does nothing if
+     * there is no viewpoint adapter.
+     *
+     * @param tree a constructor invocation
+     * @param type the type that {@code tree} creates
+     * @param ctor the constructor of which {@code con} is the type
+     * @param declaredCon the result of {@link #prepareConstructorForViewpointAdaptation} for {@code
+     *     con}
+     * @param con the type of a constructor that {@code tree} invokes; side-effected by this method
+     */
+    private void viewpointAdaptConstructorFromUse(
+            NewClassTree tree,
+            AnnotatedDeclaredType type,
+            ExecutableElement ctor,
+            @Nullable AnnotatedExecutableType declaredCon,
+            AnnotatedExecutableType con) {
+        if (viewpointAdapter == null) {
+            return;
+        }
+        viewpointAdapter.viewpointAdaptConstructor(type, ctor, con);
+        if (declaredCon != null) {
+            constructorFromUsePostViewpointAdaptation(tree, declaredCon, con);
+        }
     }
 
     /**
@@ -4582,10 +4724,26 @@ public class AnnotatedTypeFactory implements AnnotationProvider {
      *
      * @param tree a NewClassTree from constructorFromUse()
      * @param type declared method type before type variable substitution
-     * @param resolvePolyQuals if true, resolve polymorphic qualifiers
+     * @param resolvePolyQuals if true, resolve polymorphic qualifiers. It is false for a
+     *     constructor whose polymorphic qualifiers are resolved after viewpoint adaptation, by
+     *     {@link #constructorFromUsePostViewpointAdaptation}.
      */
     protected void constructorFromUsePreSubstitution(
             NewClassTree tree, AnnotatedExecutableType type, boolean resolvePolyQuals) {}
+
+    /**
+     * Resolves the polymorphic qualifiers of an invoked constructor after its declared type was
+     * viewpoint-adapted. If this method is called for a constructor, then {@link
+     * #constructorFromUsePreSubstitution} was called with {@code resolvePolyQuals} set to false.
+     *
+     * @param tree a NewClassTree from constructorFromUse()
+     * @param declaredType the declared constructor type before viewpoint adaptation
+     * @param type the viewpoint-adapted {@code declaredType}; side-effected by this method
+     */
+    protected void constructorFromUsePostViewpointAdaptation(
+            NewClassTree tree,
+            AnnotatedExecutableType declaredType,
+            AnnotatedExecutableType type) {}
 
     /**
      * Returns the return type of the method {@code m}.

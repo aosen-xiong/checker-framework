@@ -5,6 +5,7 @@ import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
 
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.framework.type.AnnotatedTypeFactory;
 import org.checkerframework.framework.type.AnnotatedTypeMirror;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedArrayType;
@@ -93,6 +94,18 @@ public abstract class AbstractQualifierPolymorphism implements QualifierPolymorp
      */
     private final SimpleAnnotatedTypeScanner<Void, Void> completer;
 
+    /**
+     * Resolves or completes the polymorphic qualifiers of a viewpoint-adapted method type, at the
+     * positions where its declared type has a polymorphic qualifier.
+     */
+    private final DeclaredPolyResolver adaptedMethodResolver = new DeclaredPolyResolver(false);
+
+    /**
+     * Resolves or completes the polymorphic qualifiers of a viewpoint-adapted constructor type, at
+     * the positions where its declared type has a polymorphic qualifier.
+     */
+    private final DeclaredPolyResolver adaptedConstructorResolver = new DeclaredPolyResolver(true);
+
     /** Mapping from poly qualifier to its instantiation for types with a qualifier parameter. */
     protected final AnnotationMirrorMap<AnnotationMirror> polyInstantiationForQualifierParameter =
             new AnnotationMirrorMap<>();
@@ -118,21 +131,7 @@ public abstract class AbstractQualifierPolymorphism implements QualifierPolymorp
         this.completer =
                 new SimpleAnnotatedTypeScanner<>(
                         (type, p) -> {
-                            for (Map.Entry<AnnotationMirror, AnnotationMirror> entry :
-                                    polyQuals.entrySet()) {
-                                AnnotationMirror poly = entry.getKey();
-                                AnnotationMirror top = entry.getValue();
-                                if (type.hasAnnotation(poly)) {
-                                    type.removeAnnotation(poly);
-                                    if (type.getKind() != TypeKind.TYPEVAR
-                                            && type.getKind() != TypeKind.WILDCARD) {
-                                        // Do not add qualifiers to type variables and
-                                        // wildcards
-                                        type.addAnnotation(
-                                                this.qualHierarchy.getBottomAnnotation(top));
-                                    }
-                                }
-                            }
+                            complete(type);
                             return null;
                         });
 
@@ -155,6 +154,26 @@ public abstract class AbstractQualifierPolymorphism implements QualifierPolymorp
                         },
                         Boolean::logicalOr,
                         false);
+    }
+
+    /**
+     * Removes the unresolved polymorphic qualifiers on {@code type}, replacing them with the bottom
+     * qualifiers.
+     *
+     * @param type the type to complete; is side-effected by this method
+     */
+    private void complete(AnnotatedTypeMirror type) {
+        for (Map.Entry<AnnotationMirror, AnnotationMirror> entry : polyQuals.entrySet()) {
+            AnnotationMirror poly = entry.getKey();
+            AnnotationMirror top = entry.getValue();
+            if (type.hasAnnotation(poly)) {
+                type.removeAnnotation(poly);
+                if (type.getKind() != TypeKind.TYPEVAR && type.getKind() != TypeKind.WILDCARD) {
+                    // Do not add qualifiers to type variables and wildcards
+                    type.addAnnotation(qualHierarchy.getBottomAnnotation(top));
+                }
+            }
+        }
     }
 
     /**
@@ -182,7 +201,15 @@ public abstract class AbstractQualifierPolymorphism implements QualifierPolymorp
      */
     @Override
     public void resolve(MethodInvocationTree tree, AnnotatedExecutableType type) {
-        if (polyQuals.isEmpty() || !hasPolymorphicQualifiers(type)) {
+        resolve(tree, type, type);
+    }
+
+    @Override
+    public void resolve(
+            MethodInvocationTree tree,
+            AnnotatedExecutableType declaredType,
+            AnnotatedExecutableType type) {
+        if (polyQuals.isEmpty() || !hasPolymorphicQualifiers(declaredType)) {
             return;
         }
 
@@ -194,20 +221,21 @@ public abstract class AbstractQualifierPolymorphism implements QualifierPolymorp
             return;
         }
         AnnotationMirrorMap<AnnotationMirror> instantiationMapping =
-                collectFromArguments(tree.getArguments(), type, tree);
+                collectFromArguments(tree.getArguments(), declaredType, tree);
 
         // For super() and this() method calls, getReceiverType(tree) does not return the correct
         // type. So, just skip those.  This is consistent with skipping receivers of constructors
         // below.
-        if (type.getReceiverType() != null
-                && hasPolymorphicQualifiers(type.getReceiverType())
+        if (declaredType.getReceiverType() != null
+                && hasPolymorphicQualifiers(declaredType.getReceiverType())
                 && !TreeUtils.isSuperConstructorCall(tree)
                 && !TreeUtils.isThisConstructorCall(tree)) {
             instantiationMapping =
                     collector.reduce(
                             instantiationMapping,
                             collector.visit(
-                                    atypeFactory.getReceiverType(tree), type.getReceiverType()));
+                                    atypeFactory.getReceiverType(tree),
+                                    declaredType.getReceiverType()));
         }
 
         if ((instantiationMapping != null && !instantiationMapping.isEmpty())
@@ -215,11 +243,35 @@ public abstract class AbstractQualifierPolymorphism implements QualifierPolymorp
             if (instantiationMapping == null) {
                 instantiationMapping = new AnnotationMirrorMap<>();
             }
+        } else {
+            instantiationMapping = null;
+        }
+        resolve(declaredType, type, instantiationMapping, adaptedMethodResolver);
+        reset();
+    }
+
+    /**
+     * Replaces the polymorphic qualifiers of {@code type} with their instantiations, or completes
+     * them if there are no instantiations.
+     *
+     * @param declaredType {@code type}, or {@code type} before viewpoint adaptation
+     * @param type the type to resolve; is side-effected by this method
+     * @param instantiationMapping a mapping from polymorphic qualifiers to their instantiations, or
+     *     null to complete the polymorphic qualifiers
+     * @param adaptedTypeResolver the resolver to use if {@code type} is viewpoint-adapted
+     */
+    private void resolve(
+            AnnotatedExecutableType declaredType,
+            AnnotatedExecutableType type,
+            @Nullable AnnotationMirrorMap<AnnotationMirror> instantiationMapping,
+            DeclaredPolyResolver adaptedTypeResolver) {
+        if (declaredType != type) {
+            adaptedTypeResolver.visit(declaredType, type, instantiationMapping);
+        } else if (instantiationMapping != null) {
             replacer.visit(type, instantiationMapping);
         } else {
             completer.visit(type);
         }
-        reset();
     }
 
     /**
@@ -276,29 +328,34 @@ public abstract class AbstractQualifierPolymorphism implements QualifierPolymorp
 
     @Override
     public void resolve(NewClassTree tree, AnnotatedExecutableType type) {
-        if (polyQuals.isEmpty() || !hasPolymorphicQualifiers(type)) {
+        resolve(tree, type, type);
+    }
+
+    @Override
+    public void resolve(
+            NewClassTree tree, AnnotatedExecutableType declaredType, AnnotatedExecutableType type) {
+        if (polyQuals.isEmpty() || !hasPolymorphicQualifiers(declaredType)) {
             return;
         }
         AnnotationMirrorMap<AnnotationMirror> instantiationMapping =
-                collectFromArguments(tree.getArguments(), type, tree);
+                collectFromArguments(tree.getArguments(), declaredType, tree);
         // TODO: poly on receiver for constructors?
         // instantiationMapping = collector.reduce(instantiationMapping,
         //        collector.visit(factory.getReceiverType(tree), type.getReceiverType()));
 
-        AnnotatedTypeMirror newClassType = type.getReturnType().deepCopy();
+        AnnotatedTypeMirror newClassType = declaredType.getReturnType().deepCopy();
         newClassType.clearAnnotations();
         newClassType.replaceAnnotations(atypeFactory.getExplicitNewClassAnnos(tree));
 
         instantiationMapping =
                 collector.reduce(
                         instantiationMapping,
-                        mapQualifierToPoly(newClassType, type.getReturnType()));
+                        mapQualifierToPoly(newClassType, declaredType.getReturnType()));
 
-        if (instantiationMapping != null && !instantiationMapping.isEmpty()) {
-            replacer.visit(type, instantiationMapping);
-        } else {
-            completer.visit(type);
+        if (instantiationMapping == null || instantiationMapping.isEmpty()) {
+            instantiationMapping = null;
         }
+        resolve(declaredType, type, instantiationMapping, adaptedConstructorResolver);
         reset();
     }
 
@@ -433,6 +490,82 @@ public abstract class AbstractQualifierPolymorphism implements QualifierPolymorp
      */
     protected abstract void replace(
             AnnotatedTypeMirror type, AnnotationMirrorMap<AnnotationMirror> replacements);
+
+    /**
+     * Resolves the polymorphic qualifiers of a viewpoint-adapted type. The two types are scanned
+     * together: the first is the declared type and the second is the same type after viewpoint
+     * adaptation. A qualifier of the adapted type is resolved only if the declared type has a
+     * polymorphic qualifier at that position. The parameter maps each polymorphic qualifier to its
+     * instantiation; if it is null, the polymorphic qualifiers are completed instead.
+     *
+     * <p>The scan does not descend into a type argument of the receiver that was substituted for a
+     * type variable: a polymorphic qualifier within it belongs to the enclosing method.
+     */
+    private class DeclaredPolyResolver
+            extends EquivalentAtmComboScanner<Void, AnnotationMirrorMap<AnnotationMirror>> {
+
+        /**
+         * Whether a type argument that was substituted for a use of a type variable has the primary
+         * qualifier of that use. True for a constructor type, whose type variables {@link
+         * AnnotatedTypes#asMemberOf} substitutes. False for a method type, whose type variables the
+         * viewpoint adapter substitutes: the type argument keeps its own primary qualifier, which
+         * belongs to the enclosing method.
+         */
+        private final boolean substitutionKeepsUseQualifier;
+
+        /**
+         * Creates a DeclaredPolyResolver.
+         *
+         * @param substitutionKeepsUseQualifier whether a type argument that was substituted for a
+         *     use of a type variable has the primary qualifier of that use
+         */
+        DeclaredPolyResolver(boolean substitutionKeepsUseQualifier) {
+            this.substitutionKeepsUseQualifier = substitutionKeepsUseQualifier;
+        }
+
+        @Override
+        protected Void scanWithNull(
+                AnnotatedTypeMirror declared,
+                AnnotatedTypeMirror adapted,
+                AnnotationMirrorMap<AnnotationMirror> instantiationMapping) {
+            return null;
+        }
+
+        @Override
+        protected Void scan(
+                AnnotatedTypeMirror declared,
+                AnnotatedTypeMirror adapted,
+                AnnotationMirrorMap<AnnotationMirror> instantiationMapping) {
+            if (declared == null || adapted == null) {
+                return null;
+            }
+            boolean substituted =
+                    declared.getKind() != adapted.getKind()
+                            || (declared.getKind() == TypeKind.TYPEVAR
+                                    && !atypeFactory
+                                            .getChecker()
+                                            .getTypeUtils()
+                                            .isSameType(
+                                                    declared.getUnderlyingType(),
+                                                    adapted.getUnderlyingType()));
+            if (!substituted || substitutionKeepsUseQualifier) {
+                for (AnnotationMirror anno : declared.getAnnotations()) {
+                    if (qualHierarchy.isPolymorphicQualifier(anno)) {
+                        if (instantiationMapping != null) {
+                            replace(adapted, instantiationMapping);
+                        } else {
+                            complete(adapted);
+                        }
+                        break;
+                    }
+                }
+            }
+            if (substituted) {
+                return null;
+            }
+            return super.scan(declared, adapted, instantiationMapping);
+        }
+    }
 
     /**
      * A helper class that resolves the polymorphic qualifiers with the most restrictive qualifier.

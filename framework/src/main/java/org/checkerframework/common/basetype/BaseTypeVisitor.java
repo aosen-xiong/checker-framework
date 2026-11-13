@@ -2911,6 +2911,33 @@ public class BaseTypeVisitor<Factory extends GenericAnnotatedTypeFactory<?, ?, ?
     }
 
     @Override
+    public Void visitMemberSelect(MemberSelectTree tree, Void p) {
+        checkTypeVariableUseMember(tree);
+        return super.visitMemberSelect(tree, p);
+    }
+
+    /**
+     * Reports an access to an instance field or method through a type-variable use that has no view
+     * through its bound; see {@link AnnotatedTypeFactory#hasTypeVariableUseView}.
+     *
+     * @param tree a member select
+     */
+    protected void checkTypeVariableUseMember(MemberSelectTree tree) {
+        Element element = TreeUtils.elementFromUse(tree);
+        if (element == null
+                || (element.getKind() != ElementKind.FIELD
+                        && element.getKind() != ElementKind.METHOD)
+                || ElementUtils.isStatic(element)) {
+            return;
+        }
+        AnnotatedTypeMirror receiverType = atypeFactory.getAnnotatedType(tree.getExpression());
+        if (receiverType.getKind() == TypeKind.TYPEVAR
+                && !atypeFactory.hasTypeVariableUseView((AnnotatedTypeVariable) receiverType)) {
+            checker.reportError(tree, "type.variable.use.member", receiverType);
+        }
+    }
+
+    @Override
     public Void visitMemberReference(MemberReferenceTree tree, Void p) {
         this.checkMethodReferenceAsOverride(tree, p);
         return super.visitMemberReference(tree, p);

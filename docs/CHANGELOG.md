@@ -118,7 +118,7 @@ JSpecify support in the Nullness Checker:
   specifies: checks only `@AnnotatedFor` scope, treats `@NullMarked` as a
   defaulting annotation, skips initialization/map-key checking, assumes purity
   and enabled assertions, and applies permissive defaults to unscoped code.
-  Field reads through another object no longer crash (eisop#2259).
+  Field reads through another object no longer crash.
 - `@NullMarked` aliases `@AnnotatedFor` scoped to nullness (plus
   `@DefaultQualifier`), and `@NullUnmarked` aliases `@UnannotatedFor`. Both
   apply under `-AuseConservativeDefaultsForUncheckedCode` and compose with
@@ -362,7 +362,7 @@ Other improvements and bug fixes:
 - `OverrideChecker` delegates comparisons to overridable hooks
   (`isParameterOverrideValid`, `isReturnOverrideValid`,
   `isTypeParameterBoundOverrideValid`); the latter reports
-  `override.typaram.invalid`, closing a soundness hole (eisop#1965).
+  `override.typaram.invalid`, closing a soundness hole.
 - Enclosing type argument fixes (eisop#737): `TypeFromTypeTreeVisitor` restores
   declared bounds; `BaseTypeValidator` checks enclosing type arguments against
   declared bounds, and reports an out-of-bound enclosing type argument once in
@@ -434,6 +434,15 @@ Other improvements and bug fixes:
 - Viewpoint adaptation no longer crashes on raw F-bounded classes; new
   `viewpointAdaptTypeDeclarationBounds` and `extractAnnotationMirror` hooks.
   Viewpoint-adapting checkers can now extend types with receiver-dependent bounds.
+- Polymorphic qualifiers of an invoked method or constructor are now
+  instantiated after viewpoint adaptation, like type arguments, so the
+  receiver's viewpoint no longer rewrites the instantiation. New
+  `QualifierPolymorphism.resolve` overloads and
+  `AnnotatedTypeFactory.methodFromUsePostViewpointAdaptation` and
+  `constructorFromUsePostViewpointAdaptation` hooks; with a `ViewpointAdapter`,
+  `methodFromUsePreSubstitution` and `constructorFromUsePreSubstitution` no
+  longer resolve these polymorphic qualifiers. The constructor of an anonymous
+  class is now viewpoint-adapted once rather than twice.
 - Viewpoint adaptation no longer overflows the stack when computing the
   supertypes of a type whose type argument is a type variable of another class,
   such as `Seq<E>` in `interface Coll<E> { void m(Seq<E> s); }`, or any member

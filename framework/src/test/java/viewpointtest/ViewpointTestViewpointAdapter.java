@@ -1,5 +1,6 @@
 package viewpointtest;
 
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.framework.type.AbstractViewpointAdapter;
 import org.checkerframework.framework.type.AnnotatedTypeFactory;
 import org.checkerframework.framework.type.AnnotatedTypeMirror;
@@ -68,5 +69,29 @@ public class ViewpointTestViewpointAdapter extends AbstractViewpointAdapter {
             }
         }
         return declaredAnnotation;
+    }
+
+    @Override
+    protected boolean widensRequalifiedUpperBounds() {
+        return true;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>A {@code @ReceiverDependentQual} type argument in an {@code extends} clause becomes the
+     * qualifier of the reference, so every qualifier except {@code @Top} and {@code @Lost} widens
+     * to {@code @Lost}. {@code @PolyVP} is a qualifier parameter that a call supplies, so it cannot
+     * be widened.
+     */
+    @Override
+    protected @Nullable AnnotationMirror widenTypeArgumentQualifier(AnnotationMirror qualifier) {
+        if (AnnotationUtils.areSame(qualifier, TOP) || AnnotationUtils.areSame(qualifier, LOST)) {
+            return qualifier;
+        }
+        if (AnnotationUtils.areSame(qualifier, POLYVP)) {
+            return null;
+        }
+        return LOST;
     }
 }

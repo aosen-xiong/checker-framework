@@ -9,6 +9,7 @@ import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedIntersec
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedNullType;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedPrimitiveType;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedTypeVariable;
+import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedTypeVariable.TypeVariableUsageKind;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedUnionType;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedWildcardType;
 import org.checkerframework.framework.type.visitor.AbstractAtmComboVisitor;
@@ -1056,6 +1057,15 @@ public class DefaultTypeHierarchy extends AbstractAtmComboVisitor<Boolean, Void>
                 // as the bounds are the same.
                 return isPrimarySubtype(subtype, supertype);
             } else if (!subtypeHasAnno && !supertypeHasAnno) {
+                if (subtype.atypeFactory.adaptsTypeVariableBounds()
+                        && subtype.getTypeVariableUsageKind() == TypeVariableUsageKind.PLAIN
+                        && supertype.getTypeVariableUsageKind() == TypeVariableUsageKind.PLAIN) {
+                    // Two bare uses of the same type parameter stand for the same type. Their
+                    // bounds differ only if viewpoint adaptation has viewed one of them through a
+                    // receiver, as a member read through a @Readonly "this" is, and
+                    // the bound of a view says nothing about which type it is.
+                    return true;
+                }
                 // Two unannotated uses of the same type parameter need to compare
                 // both upper and lower bounds.
 
@@ -1283,7 +1293,16 @@ public class DefaultTypeHierarchy extends AbstractAtmComboVisitor<Boolean, Void>
      */
     protected boolean visitTypevar_Type(
             AnnotatedTypeVariable subtype, AnnotatedTypeMirror supertype) {
-        AnnotatedTypeMirror subtypeUpperBound = subtype.getUpperBound();
+        if (supertype.getKind() == TypeKind.DECLARED
+                && !((AnnotatedDeclaredType) supertype).getTypeArguments().isEmpty()
+                && !subtype.atypeFactory.hasTypeVariableUseView(subtype)) {
+            // A use "@q X" whose bound has type arguments that cannot be widened has no view as
+            // a generic class type, through which members typed by those arguments would be
+            // reached. A class type without type arguments, such as Object, exposes none of them.
+            return false;
+        }
+        AnnotatedTypeMirror subtypeUpperBound =
+                subtype.atypeFactory.getTypeVariableUseView(subtype);
         if (TypesUtils.isBoxedPrimitive(subtypeUpperBound.getUnderlyingType())
                 && supertype instanceof AnnotatedPrimitiveType) {
             subtypeUpperBound =

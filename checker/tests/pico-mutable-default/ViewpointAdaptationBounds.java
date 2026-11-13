@@ -30,10 +30,9 @@ public class ViewpointAdaptationBounds {
     // :: error: (type.argument.type.incompatible)
     void incompatibleImmutableBound(@Immutable Generic<@Mutable Object> mutable) {}
 
-    // Use @MutabilityLost so the type argument is within the adapted @MutabilityLost bound. This
-    // isolates the diagnostic for @MutabilityLost in the adapted bound.
+    // Use @MutabilityLost so the type argument is within the adapted @MutabilityLost bound. The
+    // type is well formed, and a local variable may have it.
     void readonlyMainLostOnlyArgument(@Readonly Generic<@MutabilityLost Object> generic) {
-        // :: error: (mutability.lost.lhs)
         @Readonly Generic<@MutabilityLost Object> local = generic;
     }
 
@@ -77,19 +76,18 @@ public class ViewpointAdaptationBounds {
     }
 
     void callMethod(@Readonly Methods methods, @Mutable Object mutable) {
-        // The upper bound of T adapts to @MutabilityLost even though no argument compatibility
-        // check runs.
-        // :: error: (method.invocation.invalid) :: error: (mutability.lost.in.bounds)
+        // The @ReceiverDependentMutable receiver adapts to the call-site @Readonly receiver, so the
+        // call itself is allowed. The upper bound of T is a value position and adapts to
+        // @MutabilityLost even though no argument compatibility check runs.
+        // :: error: (mutability.lost.in.bounds)
         methods.methodWithNoArgs();
 
         // Use an explicit type argument to avoid testing type argument inference here.
-        // :: error: (method.invocation.invalid) :: error: (type.argument.type.incompatible) ::
-        // error: (mutability.lost.in.bounds)
+        // :: error: (type.argument.type.incompatible) :: error: (mutability.lost.in.bounds)
         methods.<@Mutable Object>method(mutable);
 
         // Even when using null, the adapted method type parameter bound is @MutabilityLost.
-        // :: error: (method.invocation.invalid) :: error: (mutability.lost.in.bounds) ::
-        // error: (mutability.lost.parameter)
+        // :: error: (mutability.lost.in.bounds) :: error: (mutability.lost.parameter)
         methods.method(null);
     }
 }
