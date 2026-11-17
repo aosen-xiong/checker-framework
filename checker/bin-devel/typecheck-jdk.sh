@@ -14,6 +14,17 @@ checker=$1
 module=$2
 shift 2
 module_root="$JDK_SRC/src/$module/share/classes"
+# Extra module source roots let CF-owned callers exercise package-private JDK APIs.
+# Ordinary JDK source runs leave this unset and retain their original patch context.
+patch_roots=("$module_root")
+if [[ -n ${JDK_EXTRA_SOURCE_ROOTS:-} ]]; then
+  IFS=: read -r -a extra_roots <<< "$JDK_EXTRA_SOURCE_ROOTS"
+  for root in "${extra_roots[@]}"; do
+    [[ -d "$root" ]] || { echo "No extra source root: $root" >&2; exit 2; }
+    patch_roots+=("$(cd -- "$root" && pwd)")
+  done
+fi
+module_patch=$(IFS=:; printf '%s' "${patch_roots[*]}")
 javac="$CHECKERFRAMEWORK/checker/bin/javac"
 qualifiers="$CHECKERFRAMEWORK/checker/dist/checker-qual.jar"
 [[ -x "$javac" && -f "$qualifiers" && -d "$module_root" ]] || {
@@ -54,7 +65,7 @@ check_file() {
     echo "Missing nullness opt-in: $source" >&2
     return 1
   fi
-  local command=("$javac" "${options[@]}" --patch-module "$module=$module_root"
+  local command=("$javac" "${options[@]}" --patch-module "$module=$module_patch"
     -d "$run/classes" -s "$run/generated" "$source")
   printf '%q ' "${command[@]}" >"$run/command.txt"
   printf '\n' >>"$run/command.txt"
@@ -74,8 +85,14 @@ check_file() {
 
 for target in "$@"; do
   if [[ "$target" == *.java ]]; then
-    source="$module_root/$target"
-    [[ -f "$source" ]] || {
+    source=""
+    for root in "${patch_roots[@]}"; do
+      if [[ -f "$root/$target" ]]; then
+        source="$root/$target"
+        break
+      fi
+    done
+    [[ -n "$source" ]] || {
       echo "No source file: $target" >&2
       exit 2
     }
