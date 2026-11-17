@@ -1,3 +1,5 @@
+// @below-java17-jdk-skip-test
+// Checks this study's JDK 17 source contracts, including Enumeration.asIterator.
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.framework.qual.AnnotatedFor;
 
