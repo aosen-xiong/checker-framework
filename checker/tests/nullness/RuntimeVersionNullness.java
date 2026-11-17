@@ -9,6 +9,7 @@ import java.io.IOException;
 class RuntimeVersionNullness {
     void require(Object value) {}
 
+    @SuppressWarnings("deprecation") // Exercise nullness of deprecated string-command overloads.
     void valid(Runtime runtime, Runtime.Version version, @Nullable Object other)
             throws IOException {
         require(Runtime.getRuntime());
@@ -28,6 +29,7 @@ class RuntimeVersionNullness {
         if (version.equals(other)) require(other);
     }
 
+    @SuppressWarnings("deprecation") // Exercise nullness of deprecated string-command overloads.
     void invalid(Runtime runtime, Runtime.Version version, @Nullable String[] elements)
             throws IOException {
         // :: error: (argument.type.incompatible)
