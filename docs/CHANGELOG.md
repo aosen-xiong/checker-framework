@@ -61,7 +61,8 @@ The Annotation File Utilities, which typetools moved into this repository, are b
 type-checked as the independent `annotation-file-utilities` subproject and released separately, as
 `io.github.eisop:annotation-file-utilities` and `annotation-file-utilities-VERSION.zip`, with the
 changes of `eisop/annotation-tools` merged in. The annotator works on Windows (an implicit class
-bound was inserted one character too far to the right).
+bound was inserted one character too far to the right). The artifact depends on plain Guava, as
+the other artifacts do, instead of on the Checker Framework's annotated Guava.
 
 Packaging fixes: published artifacts no longer transitively pull in
 `org.checkerframework:checker-qual`; Gradle consumers of
@@ -69,7 +70,11 @@ Packaging fixes: published artifacts no longer transitively pull in
 annotation names that ShadowJar had rewritten (breaking
 Lombok/codehaus `@NotNull`/`@Nullable` and `@org.plumelib.options.Option`)
 are fixed; and shaded jars are ~2 MB smaller, no longer bundling a stray
-`module-info.class` or jsr305 classes.
+`module-info.class`, jsr305 classes, or an incomplete copy of the JSpecify
+annotations, and no longer contain a stray `MANIFEST.MF`, `LICENSE.txt`, or
+`.keep` at their root. The POMs of all artifacts give the license URL as `https://`.
+The POM of `io.github.eisop:checker` lists `checker-qual` and `checker-util` at
+`compile` scope instead of `runtime` scope.
 The shell scripts in `checker/bin`, such as `wpi.sh`, are executable in
 `checker-framework-VERSION.zip`.
 
@@ -104,6 +109,8 @@ Type-checking and subtyping improvements:
 - Issues `annotation.on.supertype` for a main annotation on a superclass or
   interface in `extends`/`implements` (type-argument annotations remain
   permitted); override `BaseTypeVisitor#checkAnnotationOnSupertype` to allow it.
+  It replaces the Nullness Checker's `nullness.on.supertype`, which is no longer
+  issued; a `@SuppressWarnings("nullness.on.supertype")` has no effect.
 - Anonymous class creation is now checked more consistently: `new @A AClass() {}`
   validates against the superclass's declaration bound on Java 8-11 too (not
   just 12+); `new AClass() {}` is defaulted using the supertype's declaration
@@ -114,6 +121,13 @@ Type-checking and subtyping improvements:
   qualifiers of the superclass's type arguments from the target type and the
   arguments, as for `new C<>(args)`. They were defaulted, which caused false
   positives and checked the arguments against the defaulted type.
+- The `equals`, `hashCode`, and `toString` methods that the compiler generates
+  for a record have the types of the `java.lang.Record` methods they implement,
+  rather than the defaults, also for a record read from a class file. The
+  Nullness Checker no longer rejects `item.equals(null)`, and the Lock Checker
+  no longer rejects `item.hashCode()` on a `@GuardedBy` record while its lock
+  is held. In unchecked code, the conservative or permissive defaults for
+  unchecked code still apply.
 - Method invocations that the CFG synthesizes (boxing, unboxing, enhanced `for`,
   try-with-resources) are type-checked by every checker, with diagnostics at
   the source construct, also in code the CFG cannot reach unless
@@ -226,6 +240,11 @@ JSpecify support in the Nullness Checker:
 `@HasQualifierParameter` and `@ReportUse` have an `applyToSubpackages` element, as
 `@DefaultQualifier` does.
 
+The `@SuppressWarnings` prefixes of a checker include those of every checker that runs it as a
+subchecker: their `@SuppressWarningsPrefix` values or, without that meta-annotation, the lower-case
+prefix derived from their class names. For example, `@SuppressWarnings("index")` also suppresses
+the Constant Value Checker's warnings when it runs under the Index Checker.
+
 Nullness Checker improvements:
 
 - Refines `Queue.poll()`/`peek()` and `Deque.pollFirst()`/`pollLast()`/`peekFirst()`/`peekLast()`
@@ -246,6 +265,10 @@ Nullness Checker improvements:
   component, and `@Nullable` on it is no longer reported as `instanceof.nullable`.
 - `nullness.on.outer` is reported once, not twice, for an annotation within a
   declaration's type, such as `Outer.@Nullable Inner.Deep f`.
+- `dereference.of.nullable` is reported at the member select or `new`
+  expression that dereferences the possibly-null value (the `.` of
+  `myList.add(elt)`), instead of at the start of the dereferenced expression.
+  The message is unchanged.
 
 Initialization Checker improvements:
 
@@ -298,6 +321,12 @@ Command-line option additions and changes:
 
 Stub files:
 
+- Declaration annotations and record component types in a stub file are no
+  longer merged into a class compiled from source unless
+  `-AmergeStubsWithSource` is given, as was already the case for type annotations.
+  Under `-AstubWarnIfNotFound` (the default for a stub file given on the
+  command line), text parsing warns when a stub file provides annotations for
+  a class compiled from source without `-AmergeStubsWithSource`.
 - A stub file that declares a record where the running JDK has a class (for
   example the JDK 21 annotated JDK on JDK 8 to 17) no longer loses the
   annotations of the members that follow the record.
@@ -365,6 +394,14 @@ A constructor reference, such as `Foo::new`, and an array constructor reference,
 `Object[]::new`, have the qualifiers of the constructor's result, as `new Foo()` does, where the
 reference does not write one, instead of those of a use of the type.
 
+A crash while computing the type of the left-hand side of an assignment, including during type
+argument inference, no longer changes how the rest of the compilation is checked. Previously, the
+compilation units checked after the crash were checked without flow-sensitive type refinement and
+reported false positives, such as a dereference after `if (x != null)`.
+
+The development version of the web site, <https://eisop.github.io/cf/dev/>, has the manual, the
+Javadoc, and the zip files of master, built nightly from a master that passed CI.
+
 ### Implementation details
 
 The validation of qualifier target locations moved from `BaseTypeVisitor` to `BaseTypeValidator`.
@@ -383,9 +420,34 @@ The fields `messagesProperties`, `activeOptions`, `supportedOptions`, `subchecke
 `elementsWithSuppressedWarnings`, and `javacErrored` of `SourceChecker` and `ultimateParentChecker`
 and `baseTypeCheckerClassArray` of `BaseTypeChecker` are now private. Use the getters of the cached
 values instead: `getOptions()` for `activeOptions`, `getSubchecker(Class)` for an immediate
-subchecker, `fullMessageOf` for a message, and the getter of the same name for the others.
+subchecker, `fullMessageOf` for a message, `getUltimateParentChecker()`, and `getSupportedOptions()`,
+`getSubcheckers()`, `getSuppressWarningsPrefixesOfSubcheckers()`, and `getTreePathCacher()` for the
+fields of those names; the remaining fields are internal state without a getter.
 `getMessagesProperties()` is renamed `createMessagesProperties()` and is `protected`; `initChecker`
-calls it once.
+calls it once. `SourceChecker#printOrStoreMessage` is private.
+
+Public and protected API that changed without a deprecation period:
+
+- `org.plumelib.util.IPair` and `DeepCopyable` are replaced by `org.checkerframework.javacutil.Pair`
+  and `DeepCopyable` in every public signature (`AnnotatedTypeFactory#binaryTreeArgTypes`,
+  `#getFnInterfaceFromTree`, `#getDeclAnnotationWithMetaAnnotation`,
+  `GenericAnnotatedTypeFactory#getReturnStatementStores`, `TreePathUtil.enclosingNonParen`,
+  `PurityChecker.PurityResult`, and others), so published artifacts expose no relocated types.
+  `Pair` and `DeepCopyable` are no longer deprecated; `Pair` is `final`.
+- `AnnotationMirrorMap#keySet()` returns an unmodifiable `Set<AnnotationMirror>` instead of a new
+  `AnnotationMirrorSet`.
+- `ViewpointAdapter` declares `viewpointAdaptTypeDeclarationBounds` and
+  `viewpointAdaptType(AnnotatedTypeMirror, AnnotatedTypeMirror)`, and `AbstractViewpointAdapter`
+  declares the abstract `extractAnnotationMirror(AnnotationMirrorSet)`; an implementation outside
+  the framework must implement them.
+- The maps of `CFAbstractStore` (`localVariableValues`, `fieldValues`, `arrayValues`,
+  `methodCallExpressions`, `classValues`) are `CopyOnWriteMap`s, whose views are unmodifiable.
+- `BaseTypeValidator#areBoundsValid` is `protected`.
+- Removed: `AnnotatedTypeMirror#copyIntersectionBoundAnnotations`, `QualifierDefaults#applyDefault`,
+  `ValueTreeAnnotator.COVERED_CLASS_STRINGS`, `BaseTypeVisitor.positions` (use
+  `TreeUtils.getStartPosition` and `getEndPosition`). `AnnotationUtils.sameElementValues` is
+  private (use `areSame`). `QualifierDefaults.STANDARD_UNCHECKED_DEFAULTS_TOP` and `_BOTTOM` are
+  renamed `CONSERVATIVE_UNCHECKED_DEFAULTS_TOP` and `_BOTTOM`.
 
 When assertions are enabled, `SourceChecker#report` asserts that the reported key has message text
 in a `messages.properties` file that the checker loads. Tests of a checker that reports a key
@@ -427,8 +489,11 @@ Removed methods that have been deprecated for more than two years:
 `TreeUtils.isVarArgs` (both overloads), `TreeUtils.isVarArgMethodCall`,
 `AbstractAnalysis.getContainingMethod` and `getContainingClass`,
 `JavaExpression.isUnassignableByOtherCode` and `isUnmodifiableByOtherCode` (use
-`isAssignableByOtherCode` and `isModifiableByOtherCode`, which are now abstract), and
-`AnnotatedTypeMirror.removeNonTopAnnotationInHierarchy` and `isAnnotatedInHierarchy`.
+`isAssignableByOtherCode` and `isModifiableByOtherCode`, which are now abstract),
+`AnnotatedTypeMirror.removeNonTopAnnotationInHierarchy` and `isAnnotatedInHierarchy`,
+`GenericAnnotatedTypeFactory.addComputedTypeAnnotations(Tree, AnnotatedTypeMirror, boolean)` (use
+`addComputedTypeAnnotations(Tree, AnnotatedTypeMirror)` or `addComputedTypeAnnotationsWithoutFlow`),
+and `AnnotationUtils.isDeclarationAnnotation` (use `!isTypeUseAnnotation`).
 
 The test framework accepts an expected error key in square brackets, as in
 `// :: error: [assignment]`, as well as in parentheses, so tests written for
@@ -444,6 +509,9 @@ are removed.
 `SourceChecker#shouldSuppressWarnings(TreePath, String)` now also calls the `Element` overload with
 the innermost enclosing declaration, so an override of that overload applies to diagnostics reported
 on trees, too.
+
+New `SourceChecker#shouldSkipDefs(VariableTree)` lets a checker skip a variable declaration and
+its initializer, as the `ClassTree` and `MethodTree` overloads do for classes and methods.
 
 `GenericAnnotatedTypeFactory#performFlowAnalysisForClass` is now `final`; a subclass customizes the
 analysis in the new `performFlowAnalysisForClassImpl`. New `AnnotatedTypeFactory` hooks
@@ -517,6 +585,11 @@ Performance optimizations:
 - `BaseTypeVisitor.FoundRequired` stores `Object` instead of `String`, deferring
   `toString()`. **API change**: callers must call `.toString()` explicitly.
 - `AnnotatedTypeScanner.visitedNodes` lazily allocated.
+- `EquivalentAtmComboScanner` records the visited type pairs in one flat identity table
+  instead of an `IdentityHashMap` per visited type: 2.4% less allocation for the Index Checker on
+  plume-util and 8% less for the JSpecify reference checker on Guava.
+- `TreeUtils.isRecordTree`, `isSwitchExpression`, and `isYield`, and `ElementUtils.isRecordElement`
+  and `isBindingVariable`, compare the kind with a cached constant instead of comparing its name.
 - `StructuralEqualityComparer.arePrimaryAnnosEqual` is non-mutating.
 - Optimized Value Checker: `AnnotationBuilder` gained a `TypeElement` constructor;
   final locals indexed by declaring element; `ValueQualifierHierarchy` caches
@@ -654,6 +727,7 @@ eisop#778,
 eisop#786,
 eisop#792,
 eisop#833,
+eisop#849,
 eisop#863,
 eisop#949,
 eisop#1011,
@@ -679,6 +753,7 @@ eisop#1592,
 eisop#1637,
 eisop#1642,
 eisop#1653,
+eisop#1678,
 eisop#1735,
 eisop#1801,
 eisop#1818,
@@ -692,6 +767,7 @@ eisop#1926,
 eisop#1958,
 eisop#1965,
 eisop#1971,
+eisop#1983,
 eisop#1986,
 eisop#1987,
 eisop#1990,
@@ -789,6 +865,19 @@ eisop#2490,
 eisop#2491,
 eisop#2499,
 eisop#2582,
+eisop#2590,
+eisop#2591,
+eisop#2592,
+eisop#2593,
+eisop#2594,
+eisop#2601,
+eisop#2602,
+eisop#2603,
+eisop#2612,
+eisop#2623,
+eisop#2625,
+eisop#2633,
+eisop#2641,
 typetools#399,
 typetools#602,
 typetools#2816,
@@ -949,7 +1038,10 @@ Moved the Annotation File Utilities code into the Checker Framework repository a
 Java expressions in annotations, such as in contracts and dependent types, are now parsed with
 javac's parser instead of JavaParser.
 (EISOP note: when running the Checker Framework without `checker/bin/javac`, export the package
-`jdk.compiler/com.sun.tools.javac.parser` to it.)
+`jdk.compiler/com.sun.tools.javac.parser` to it. `JavaExpressionParseUtil` moved from
+`org.checkerframework.framework.util` to `org.checkerframework.dataflow.expression`, and its nested
+`JavaExpressionParseException` is a top-level class of that package; neither is deprecated at the
+old location.)
 
 ## Version 3.49.5-eisop1 (April 26, 2026)
 
@@ -1047,10 +1139,10 @@ Changed behavior and usage of `HashcodeAtmVisitor`.
 
 ### Closed issues
 
-typetools#7096, typetools#7539, eisop#1099, eisop#1219, eisop#1225, eisop#1231,
-eisop#1242, eisop#1247, eisop#1257, eisop#1263, eisop#1265, eisop#1272,
-eisop#1310, eisop#1326, eisop#1444, eisop#1448, eisop#1500, eisop#1506,
-eisop#1536, eisop#1543, eisop#1565.
+typetools#7096, typetools#7539, eisop#268, eisop#1099, eisop#1219, eisop#1225,
+eisop#1231, eisop#1242, eisop#1247, eisop#1257, eisop#1263, eisop#1265,
+eisop#1272, eisop#1310, eisop#1326, eisop#1444, eisop#1448, eisop#1500,
+eisop#1506, eisop#1536, eisop#1543, eisop#1565.
 
 ## Version 3.49.5 (June 30, 2025)
 

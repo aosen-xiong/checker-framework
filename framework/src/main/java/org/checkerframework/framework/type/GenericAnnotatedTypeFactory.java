@@ -2354,9 +2354,11 @@ public abstract class GenericAnnotatedTypeFactory<
     public AnnotatedTypeMirror getAnnotatedTypeLhsNoTypeVarDefault(Tree lhsTree) {
         boolean old = this.shouldDefaultTypeVarLocals;
         shouldDefaultTypeVarLocals = false;
-        AnnotatedTypeMirror type = getAnnotatedTypeLhs(lhsTree);
-        this.shouldDefaultTypeVarLocals = old;
-        return type;
+        try {
+            return getAnnotatedTypeLhs(lhsTree);
+        } finally {
+            this.shouldDefaultTypeVarLocals = old;
+        }
     }
 
     /**
@@ -2440,6 +2442,28 @@ public abstract class GenericAnnotatedTypeFactory<
         shouldCache = false;
         computingAnnotatedTypeMirrorOfLhs = true;
 
+        try {
+            return getAnnotatedTypeLhsWithoutFlow(lhsTree, oldShouldCache);
+        } finally {
+            // In case computing the type crashed, restore the state: the next compilation unit
+            // uses this type factory, too.
+            useFlow = oldUseFlow;
+            shouldCache = oldShouldCache;
+            computingAnnotatedTypeMirrorOfLhs = oldComputingAnnotatedTypeMirrorOfLhs;
+        }
+    }
+
+    /**
+     * Computes the type of a left-hand side of an assignment, after {@link #getAnnotatedTypeLhs}
+     * has disabled flow-sensitive refinement and caching.
+     *
+     * @param lhsTree left-hand side of an assignment
+     * @param oldShouldCache the value of {@link #shouldCache} before {@link #getAnnotatedTypeLhs}
+     *     disabled caching; it is restored for a variable declared using {@code var}
+     * @return AnnotatedTypeMirror of {@code lhsTree}
+     */
+    private AnnotatedTypeMirror getAnnotatedTypeLhsWithoutFlow(
+            Tree lhsTree, boolean oldShouldCache) {
         AnnotatedTypeMirror res;
         switch (lhsTree.getKind()) {
             case VARIABLE:
@@ -2502,10 +2526,6 @@ public abstract class GenericAnnotatedTypeFactory<
                                     + lhsTree.getKind());
                 }
         }
-
-        useFlow = oldUseFlow;
-        shouldCache = oldShouldCache;
-        computingAnnotatedTypeMirrorOfLhs = oldComputingAnnotatedTypeMirrorOfLhs;
         return res;
     }
 
@@ -2522,9 +2542,11 @@ public abstract class GenericAnnotatedTypeFactory<
     /*package-private*/ AnnotatedTypeMirror getAnnotatedTypeWithReceiverRefinement(Tree tree) {
         boolean oldUseFlow = useFlow;
         useFlow = everUseFlow;
-        AnnotatedTypeMirror result = getAnnotatedType(tree);
-        useFlow = oldUseFlow;
-        return result;
+        try {
+            return getAnnotatedType(tree);
+        } finally {
+            useFlow = oldUseFlow;
+        }
     }
 
     /**
@@ -2637,24 +2659,6 @@ public abstract class GenericAnnotatedTypeFactory<
     }
 
     /**
-     * Like {@link #addComputedTypeAnnotations(Tree, AnnotatedTypeMirror)}. Overriding
-     * implementations typically simply pass the boolean to calls to super.
-     *
-     * @param tree an AST node
-     * @param type the type obtained from tree
-     * @param iUseFlow whether to use information from dataflow analysis
-     * @deprecated use {@link #addComputedTypeAnnotations(Tree, AnnotatedTypeMirror)} or {@link
-     *     #addComputedTypeAnnotationsWithoutFlow(Tree, AnnotatedTypeMirror)} if you want to add
-     *     computed type annotations without using flow information
-     */
-    @Deprecated // 2024-07-07
-    @SuppressWarnings("unused")
-    protected void addComputedTypeAnnotations(
-            Tree tree, AnnotatedTypeMirror type, boolean iUseFlow) {
-        addComputedTypeAnnotationsWithoutFlow(tree, type);
-    }
-
-    /**
      * A helper method to add computed type annotations to a type without using flow information.
      *
      * <p>This method is final; override {@link #addComputedTypeAnnotations(Tree,
@@ -2668,8 +2672,11 @@ public abstract class GenericAnnotatedTypeFactory<
             Tree tree, AnnotatedTypeMirror type) {
         boolean oldUseflow = useFlow;
         useFlow = false;
-        addComputedTypeAnnotations(tree, type);
-        useFlow = oldUseflow;
+        try {
+            addComputedTypeAnnotations(tree, type);
+        } finally {
+            useFlow = oldUseflow;
+        }
     }
 
     /**

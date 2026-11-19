@@ -41,43 +41,36 @@ grep -q "annotation-file-utilities-${VERSION}" docs/annotation-file-utilities/an
   || fail "updateVersionNumbers did not update the version in the Annotation File Utilities manual."
 grep -q "checker-framework-${VERSION}" docs/checker-framework-webpage.html \
   || fail "updateVersionNumbers did not update the version in the web page."
+# The changelog has a section for the release.  Its date may still be a placeholder here; the
+# release build (release_build.py) checks the date.
+grep -q "^## Version ${VERSION} (" docs/CHANGELOG.md \
+  || fail "docs/CHANGELOG.md has no section \"## Version ${VERSION} (...)\"."
 
 ## Build the release files.
 ./gradlew buildAll -Prelease=true --console=plain --warning-mode=all
+# The source files of the tutorial, which its web page links to.
+make -C docs/tutorial
 
-## Copy the files to the web site directory.  Do it twice, as a release may be rerun.
-WEBSITE_DIR="$TMP_DIR/website"
-mkdir -p "$WEBSITE_DIR"
-./gradlew copyToWebsite -Prelease=true -PcfWebsite="$WEBSITE_DIR" --console=plain --warning-mode=all
-./gradlew copyToWebsite -Prelease=true -PcfWebsite="$WEBSITE_DIR" --rerun --console=plain --warning-mode=all
-
-for f in \
-  "checker-framework-${VERSION}.zip" \
-  "annotation-file-utilities-${VERSION}.zip" \
-  CHANGELOG.md \
-  checker-framework-webpage.html \
-  api/index.html \
-  manual/manual.html \
-  manual/developer-manual.html \
-  annotation-file-utilities/annotation-file-utilities.html \
-  annotation-file-utilities/annotation-file-format.html; do
-  [ -f "$WEBSITE_DIR/$f" ] || fail "copyToWebsite did not create $f."
-done
-for link in index.html manual/index.html annotation-file-utilities/index.html; do
-  [ -L "$WEBSITE_DIR/$link" ] || fail "copyToWebsite did not create the symbolic link $link."
-  [ -f "$WEBSITE_DIR/$link" ] || fail "The symbolic link $link points to a missing file."
-done
-# A file in the web site must stay writable, so that the next release can replace it.
-if find "$WEBSITE_DIR" -type f ! -perm -u+w | grep .; then
-  fail "copyToWebsite created read-only files."
-fi
+## Create the zip files, which release_build.py attaches to the GitHub release.  The web site is
+## generated from them.
+./gradlew zip annotationFileUtilitiesZip -Prelease=true --console=plain --warning-mode=all
 
 ## Check the contents of the zip files.
-CF_ZIP="$WEBSITE_DIR/checker-framework-${VERSION}.zip"
-AFU_ZIP="$WEBSITE_DIR/annotation-file-utilities-${VERSION}.zip"
+CF_ZIP="build/checker-framework-${VERSION}.zip"
+AFU_ZIP="build/annotation-file-utilities-${VERSION}.zip"
+[ -f "$CF_ZIP" ] || fail "$CF_ZIP does not exist."
+[ -f "$AFU_ZIP" ] || fail "$AFU_ZIP does not exist."
 unzip -Z1 "$CF_ZIP" > "$TMP_DIR/cf-zip.txt"
 unzip -Z1 "$AFU_ZIP" > "$TMP_DIR/afu-zip.txt"
-for f in checker/dist/checker.jar checker/dist/checker-qual.jar checker/bin/javac README.md; do
+for f in \
+  checker/dist/checker.jar \
+  checker/dist/checker-qual.jar \
+  checker/bin/javac \
+  README.md \
+  docs/manual/manual.pdf \
+  docs/manual/checker-framework-dataflow-manual.pdf \
+  docs/tutorial/index.html \
+  docs/tutorial/sourcefiles.zip; do
   grep -qx "checker-framework-${VERSION}/$f" "$TMP_DIR/cf-zip.txt" \
     || fail "The Checker Framework zip file does not contain $f."
 done
@@ -104,6 +97,16 @@ for f in checker/bin/javac checker/bin/wpi.sh checker/bin/wpi-many.sh checker/bi
 done
 unzip -Z "$AFU_ZIP" "annotation-file-utilities-${VERSION}/annotation-file-utilities/bin/insert-annotations-to-source" \
   | grep -q '^-rwx' || fail "insert-annotations-to-source is not executable in the Annotation File Utilities zip file."
+# The manual shows its images: each one that manual.html references is next to it in the Checker
+# Framework zip file.
+grep -qx "checker-framework-${VERSION}/docs/manual/manual.html" "$TMP_DIR/cf-zip.txt" \
+  || fail "The Checker Framework zip file does not contain docs/manual/manual.html."
+mapfile -t MANUAL_IMAGES < <(unzip -p "$CF_ZIP" "checker-framework-${VERSION}/docs/manual/manual.html" | grep -o '<img [^>]*src="[^"]*"' | sed 's/.*src="//; s/"$//' | sort -u)
+[ "${#MANUAL_IMAGES[@]}" -gt 0 ] || fail "No image found in docs/manual/manual.html."
+for img in "${MANUAL_IMAGES[@]}"; do
+  grep -qx "checker-framework-${VERSION}/docs/manual/$img" "$TMP_DIR/cf-zip.txt" \
+    || fail "The Checker Framework zip file does not contain docs/manual/$img, which the manual shows."
+done
 # The manual shows the figures.
 grep -q "^annotation-file-utilities-${VERSION}/annotation-file-utilities/figures/.*\.svg$" "$TMP_DIR/afu-zip.txt" \
   || fail "The Annotation File Utilities zip file does not contain the figures of its manual."
@@ -137,8 +140,8 @@ checker/bin-devel/check-release-links.py "$CF_HOME"
 ## Run the tools from the unpacked zip files.
 SMOKE_DIR="$TMP_DIR/smoke"
 mkdir -p "$SMOKE_DIR"
-# The same check that release_push.py runs on the downloaded release.
-docs/developer/release/javac-sanity-check.sh "$CF_HOME" docs/examples/NullnessExampleWithWarnings.java
+# The same check that release_push.py runs on the release zip file.
+docs/developer/release/javac-sanity-check.sh "$CF_HOME" "$CF_HOME/docs/examples/NullnessExampleWithWarnings.java"
 printf 'class Insert {\n  Object f;\n}\n' > "$SMOKE_DIR/Insert.java"
 printf 'package org.checkerframework.checker.nullness.qual:\nannotation @Nullable:\n\npackage :\nclass Insert:\n    field f: @org.checkerframework.checker.nullness.qual.Nullable\n' > "$SMOKE_DIR/Insert.jaif"
 (cd "$SMOKE_DIR" && "$AFU_HOME/bin/insert-annotations-to-source" -i Insert.jaif Insert.java)
@@ -195,3 +198,30 @@ fi
 (cd docs/examples/afu-consumer \
   && "$ROOT_DIR/gradlew" -Dmaven.repo.local="$MAVEN_REPO" -PafuVersion="${VERSION}" --console=plain \
     clean smoketest)
+
+## No published POM depends on org.checkerframework:checker-qual, the typetools artifact: a
+## consumer must get io.github.eisop:checker-qual only.  (Exclusions of it are fine.)
+for pom in "$MAVEN_LOCAL"/*/"${VERSION}"/*.pom; do
+  python3 - "$pom" << 'EOF' || fail "$pom depends on org.checkerframework:checker-qual."
+import sys
+import xml.etree.ElementTree as ET
+ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+for dep in ET.parse(sys.argv[1]).getroot().findall("m:dependencies/m:dependency", ns):
+    if dep.findtext("m:groupId", "", ns) == "org.checkerframework" and dep.findtext("m:artifactId", "", ns) == "checker-qual":
+        sys.exit(1)
+EOF
+done
+
+## Compile the Maven example against the published artifacts, as release_push.py does: the
+## checker runs from the annotation processor path and reports the example's expected error.
+MAVEN_EXAMPLE_DIR="$TMP_DIR/maven-example"
+./gradlew updateCopyMavenExample -Prelease=true -PdestDir="$MAVEN_EXAMPLE_DIR" --console=plain --warning-mode=all
+# The example's build is supposed to fail; `-fn` makes mvn exit normally and the grep decides.
+(cd "$MAVEN_EXAMPLE_DIR/MavenExample" \
+  && mvn -B -fn -Dmaven.repo.local="$MAVEN_REPO" compile > "$TMP_DIR/maven-example.txt" 2>&1) || true
+grep -Eq 'MavenExample\.java:\[30,(29|30)\] \[assignment\.type\.incompatible\] incompatible types in assignment\.' \
+  "$TMP_DIR/maven-example.txt" \
+  || {
+    cat "$TMP_DIR/maven-example.txt"
+    fail "The Maven example did not report its expected error with the published artifacts."
+  }
