@@ -22,9 +22,7 @@ class RecordValueNullness {
         return (name == null ? 0 : name.length()) + record.toString().length();
     }
 
-    // CF c12ce38daa incorrectly defaults the generated equals parameter to nonnull.
-    // Record.equals already accepts null; retain this caller until the checker is fixed.
-    @SuppressWarnings("nullness:argument.type.incompatible")
+    // Generated equals inherits Record.equals' nullable input contract.
     void generatedEquals(Item item) {
         item.equals(null);
     }
