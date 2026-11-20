@@ -443,11 +443,16 @@ Public and protected API that changed without a deprecation period:
 - The maps of `CFAbstractStore` (`localVariableValues`, `fieldValues`, `arrayValues`,
   `methodCallExpressions`, `classValues`) are `CopyOnWriteMap`s, whose views are unmodifiable.
 - `BaseTypeValidator#areBoundsValid` is `protected`.
+- `DefaultQualifierForUseTypeAnnotator#getDefaultAnnosForUses` is `public`, so an override must be
+  `public`, too.
 - Removed: `AnnotatedTypeMirror#copyIntersectionBoundAnnotations`, `QualifierDefaults#applyDefault`,
   `ValueTreeAnnotator.COVERED_CLASS_STRINGS`, `BaseTypeVisitor.positions` (use
-  `TreeUtils.getStartPosition` and `getEndPosition`). `AnnotationUtils.sameElementValues` is
-  private (use `areSame`). `QualifierDefaults.STANDARD_UNCHECKED_DEFAULTS_TOP` and `_BOTTOM` are
-  renamed `CONSERVATIVE_UNCHECKED_DEFAULTS_TOP` and `_BOTTOM`.
+  `TreeUtils.getStartPosition` and `getEndPosition`),
+  `CheckedExceptionsUtil.thrownCheckedExceptions` (use `thrownCheckedExceptionsATM`),
+  `InitializationStore#isDeclaredInitialized` (which always returned false).
+  `AnnotationUtils.sameElementValues` is private (use `areSame`).
+  `QualifierDefaults.STANDARD_UNCHECKED_DEFAULTS_TOP` and `_BOTTOM` are renamed
+  `CONSERVATIVE_UNCHECKED_DEFAULTS_TOP` and `_BOTTOM`.
 
 When assertions are enabled, `SourceChecker#report` asserts that the reported key has message text
 in a `messages.properties` file that the checker loads. Tests of a checker that reports a key
@@ -467,6 +472,9 @@ Deprecated:
   `AnnotatedTypeFactory#isFromByteCode` to account for stub files.
 - `QualifierDefaults.addUncheckedCodeDefault` and `addUncheckedCodeDefaults`; use the
   `addConservativeUncheckedCodeDefault(s)` or `addPermissiveUncheckedCodeDefault(s)` methods.
+- `QualifierDefaults.addCheckedCodeDefault(AnnotationMirror, TypeUseLocation, boolean)`, whose
+  `applyToSubpackages` argument has no effect, because a checked-code default is not scoped to a
+  package; use the overload without it.
 - `SystemUtil.COLON_SPLITTER`; use the new `SystemUtil.splitPaths(String)`, which splits a list of
   paths on the platform's path separator.
 - These unused methods, which will be removed in a future release:
@@ -513,6 +521,11 @@ on trees, too.
 New `SourceChecker#shouldSkipDefs(VariableTree)` lets a checker skip a variable declaration and
 its initializer, as the `ClassTree` and `MethodTree` overloads do for classes and methods.
 
+New `SourceChecker#getErrorCount()` returns the number of errors that the checker has reported, for
+example for an override of `typeProcessingOver` that prints a note if there were any. Unlike javac's
+error count, it counts only the checker's own errors, including under `-Awarns` and when the Error
+Prone plugin receives the diagnostics.
+
 `GenericAnnotatedTypeFactory#performFlowAnalysisForClass` is now `final`; a subclass customizes the
 analysis in the new `performFlowAnalysisForClassImpl`. New `AnnotatedTypeFactory` hooks
 `canUseCachedFlowDependentType`, `canCacheFlowDependentType`, and `isAnonymousDiamondSupertypeFinal`
@@ -534,9 +547,10 @@ compound checker shares them with its subcheckers.
 
 New `@ProgrammaticDefaultLocations` permits a programmatic default at a location its
 `@TargetLocations` prohibits. `QualifierDefaults.addElementDefault` throws `TypeSystemError` after
-type checking begins, and registered defaults combine instead of replacing. `QualifierDefaults`
-keeps permissive unchecked-code defaults alongside the conservative ones
-(`addPermissiveUncheckedCodeDefault` and `addConservativeUncheckedCodeDefault`).
+type checking begins, and registered defaults combine instead of replacing. New
+`QualifierDefaults.addPackageDefault` takes `applyToSubpackages`, for a package default that does
+not apply to subpackages. `QualifierDefaults` keeps permissive unchecked-code defaults alongside the
+conservative ones (`addPermissiveUncheckedCodeDefault` and `addConservativeUncheckedCodeDefault`).
 `AnnotatedTypeFactory.getRoot()` is now `public`. A checker declares custom `-Amode` values with
 `@SupportedModes` and `addOptionsForMode`. Diagnostics go through `DiagnosticSink`;
 `reportError`/`reportWarning` accept a null source for positionless messages.
@@ -675,6 +689,16 @@ Other improvements and bug fixes:
   (`Seq<E>` in `interface Coll<E>`), any member access on `java.util.List`, or an
   override of or raw method reference to a method whose type variable is bounded
   by a class type variable (`<S extends T> Ord<S> rev()` in `class Ord<T>`).
+- Viewpoint adaptation substitutes a receiver's type arguments for the class's
+  type variables once, in `asMemberOf`, instead of a second time in the adapter.
+  A receiver whose type arguments are the class's own type variables, such as
+  `Swap<B, A>` within `class Swap<A, B>`, no longer reports false
+  `return.type.incompatible`, `argument.type.incompatible`,
+  `override.return.invalid`, or `override.param.invalid` errors, or crashes in
+  `StructuralEqualityComparer` on `S5<? super V, T>`. A written qualifier on a
+  use of a class type variable in a member's declared type is now adapted and
+  replaces the type argument's qualifier, as in every other checker, instead of
+  being dropped.
 - Fixed aliasing bug in `AnnotatedTypeCopier` for executable types.
 - Fixed `IndexOutOfBoundsException` for lambdas in varargs.
 - Fixed crash on a dependent type annotation that names a lambda parameter.
@@ -693,6 +717,11 @@ Other improvements and bug fixes:
 - `AnnotatedTypeMirror.toString(false)` now matches `toString()`.
 - No longer crashes on method references with raw receivers or supertypes
   with missing type-argument classes.
+- The Nullness Checker no longer crashes in `StructuralEqualityComparer` on a
+  conditional expression that is an argument of a generic method, such as
+  `wrap(first == null ? second : first.thenComparing(second))`. As in every
+  other checker, the operands of such a poly conditional are checked against the
+  parameter type, not against the conditional's own captured type.
 - No longer crashes on a type annotation on an array creation whose element
   type has a wildcard type argument, such as `new @NonNull List<?>[0]`, inside a
   method that has a parameter.
@@ -864,6 +893,7 @@ eisop#2485,
 eisop#2490,
 eisop#2491,
 eisop#2499,
+eisop#2574,
 eisop#2582,
 eisop#2590,
 eisop#2591,
@@ -877,7 +907,10 @@ eisop#2612,
 eisop#2623,
 eisop#2625,
 eisop#2633,
+eisop#2640,
 eisop#2641,
+eisop#2642,
+eisop#2655,
 typetools#399,
 typetools#602,
 typetools#2816,

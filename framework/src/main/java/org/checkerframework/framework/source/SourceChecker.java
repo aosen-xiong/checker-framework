@@ -1555,6 +1555,7 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
         if (parentChecker == null) {
             validateMode(options);
             validateAssumeAssertionsOption(options);
+            validateInferenceWorkBudgetOption();
         }
 
         checkPermissiveAndConservativeDefaults();
@@ -1621,6 +1622,9 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
      * don't process the file, as it contains some Java errors.
      */
     private int errsOnLastExit = 0;
+
+    /** The number of errors that this checker has reported; see {@link #getErrorCount}. */
+    private int errorCount = 0;
 
     /**
      * Returns the requested (immediate) subchecker. A checker of a given class can only be run
@@ -2006,6 +2010,23 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
     }
 
     /**
+     * Returns the number of errors that this checker has reported so far in this compilation,
+     * through {@link #reportError} or {@link #report(Object, DiagMessage)}. Suppressed errors are
+     * not counted. An error that {@code -Awarns} reports as a warning is counted.
+     *
+     * <p>The count does not include the errors of this checker's subcheckers; see {@link
+     * #getSubcheckers}. Unlike javac's error count, it does not include errors from javac or from
+     * other annotation processors, and it is also correct when a host, such as the Error Prone
+     * plugin, rather than javac receives the checker's diagnostics. For example, an override of
+     * {@link #typeProcessingOver} can use it to print a note if the checker reported an error.
+     *
+     * @return the number of errors that this checker has reported
+     */
+    public int getErrorCount() {
+        return errorCount;
+    }
+
+    /**
      * Reports a diagnostic message. By default, prints it to the screen via the compiler's internal
      * messager.
      *
@@ -2107,8 +2128,11 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
                     e);
         }
 
-        if (kind == Diagnostic.Kind.ERROR && warns) {
-            kind = Diagnostic.Kind.MANDATORY_WARNING;
+        if (kind == Diagnostic.Kind.ERROR) {
+            ++errorCount;
+            if (warns) {
+                kind = Diagnostic.Kind.MANDATORY_WARNING;
+            }
         }
 
         if (hasOption("onelinemsg")) {
@@ -3078,6 +3102,27 @@ public abstract class SourceChecker extends AbstractTypeProcessor implements Opt
                     String.format(
                             "Unsupported mode %s for %s; supported modes: %s.",
                             mode, getClass().getSimpleName(), new TreeSet<>(modes)));
+        }
+    }
+
+    /**
+     * Throws a {@link UserError} if the {@code -AinferenceWorkBudget} command-line option, when
+     * given, is not a positive integer.
+     */
+    private void validateInferenceWorkBudgetOption() {
+        String value = getOption("inferenceWorkBudget");
+        if (value == null) {
+            return;
+        }
+        int budget;
+        try {
+            budget = Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            budget = 0;
+        }
+        if (budget <= 0) {
+            throw new UserError(
+                    "Value of -AinferenceWorkBudget must be a positive integer, not " + value);
         }
     }
 
