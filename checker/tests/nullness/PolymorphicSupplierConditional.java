@@ -23,8 +23,6 @@ class PolymorphicSupplierConditional<T> {
         return value != null ? value : supplier.get();
     }
 
-    // CF conditional/wildcard limitation; equivalent forms above pass unsuppressed.
-    @SuppressWarnings("nullness:conditional.type.incompatible")
     @PolyNull T choose(@Nullable T value, Supplier<? extends @PolyNull T> supplier) {
         return value != null ? value : supplier.get();
     }

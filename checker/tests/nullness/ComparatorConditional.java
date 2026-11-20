@@ -1,5 +1,5 @@
 // @below-java17-jdk-skip-test
-// JDK 17 study case NULL-0046: conditional wildcard diagnostic; separate returns pass.
+// JDK 17 study regression for conditional expressions with wildcard comparator inputs.
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.framework.qual.AnnotatedFor;
@@ -21,8 +21,6 @@ class ComparatorConditional<T extends @Nullable Object> implements Comparator<T>
         return real == null ? 0 : real.compare(a, b);
     }
 
-    @SuppressWarnings(
-            "nullness:conditional.type.incompatible") // Both alternatives accept nonnull T.
     public Comparator<T> thenComparing(Comparator<? super T> other) {
         return new ComparatorConditional<>(real == null ? other : real.thenComparing(other));
     }

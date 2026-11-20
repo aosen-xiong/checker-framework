@@ -1,5 +1,4 @@
-// @skip-test Reproduces the open StructuralEqualityComparer NULL/TYPEVAR crash.
-// JDK 17 study case NULL-0045; not counted as a passing regression test.
+// JDK 17 study regression for EISOP issue 2655.
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.framework.qual.AnnotatedFor;
 
